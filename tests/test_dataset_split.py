@@ -1,6 +1,8 @@
 import subprocess
 import sys
 
+import pytest
+
 from small_model_train.dataset_split import split_rows
 from small_model_train.io_utils import read_jsonl, write_jsonl
 
@@ -19,6 +21,18 @@ def test_split_rows_keeps_source_fields():
     split = split_rows(rows, eval_count=1, seed=1)
     assert split[0]["work_id"] == "w"
     assert split[0]["quality_tag"] == "A"
+
+
+def test_split_rows_samples_duplicate_ids_by_position():
+    rows = [{"id": "duplicate", "text": f"正文{index}"} for index in range(3)]
+    split = split_rows(rows, eval_count=1, seed=1)
+    assert sum(1 for row in split if row["split"] == "eval") == 1
+
+
+def test_split_rows_rejects_negative_eval_count():
+    rows = [{"id": "a", "text": "正文"}]
+    with pytest.raises(ValueError):
+        split_rows(rows, eval_count=-1)
 
 
 def test_split_train_eval_script_runs_from_repo_root(tmp_path):

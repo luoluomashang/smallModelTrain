@@ -6,12 +6,11 @@ import random
 def split_rows(rows: list[dict], eval_count: int, seed: int = 20260617) -> list[dict]:
     if eval_count < 0:
         raise ValueError("eval_count must be >= 0")
-    ids = [row["id"] for row in rows]
     rng = random.Random(seed)
-    eval_ids = set(rng.sample(ids, k=min(eval_count, len(ids))))
+    eval_indexes = set(rng.sample(range(len(rows)), k=min(eval_count, len(rows))))
     output: list[dict] = []
-    for row in rows:
+    for index, row in enumerate(rows):
         updated = dict(row)
-        updated["split"] = "eval" if row["id"] in eval_ids else "train"
+        updated["split"] = "eval" if index in eval_indexes else "train"
         output.append(updated)
     return output
