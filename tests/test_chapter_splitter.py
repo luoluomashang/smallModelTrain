@@ -54,6 +54,14 @@ def test_clean_raw_text_removes_multiline_author_note_blocks():
     assert clean_raw_text(text) == "第1章 开始\n\n正文"
 
 
+def test_split_chapters_preserves_next_heading_after_author_note_without_blank_line():
+    text = "第1章 开始\n\n正文一\n\n作者有话说：明天见\n第2章 继续\n\n正文二"
+    chapters = split_chapters(text, work_id="work_001")
+    assert [chapter["chapter_title"] for chapter in chapters] == ["第1章 开始", "第2章 继续"]
+    assert chapters[0]["text"] == "正文一"
+    assert chapters[1]["text"] == "正文二"
+
+
 def test_ingest_raw_text_script_runs_from_repo_root_and_uses_unique_work_ids(tmp_path):
     input_dir = tmp_path / "raw"
     (input_dir / "alpha").mkdir(parents=True)
@@ -78,11 +86,11 @@ def test_ingest_raw_text_script_runs_from_repo_root_and_uses_unique_work_ids(tmp
 
     assert result.returncode == 0, result.stderr
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
-    assert [row["work_id"] for row in rows] == ["alpha__book", "beta__book"]
-    assert [row["id"] for row in rows] == [
-        "alpha__book_chapter_0001",
-        "beta__book_chapter_0001",
-    ]
+    work_ids = [row["work_id"] for row in rows]
+    assert work_ids[0].startswith("alpha__book__")
+    assert work_ids[1].startswith("beta__book__")
+    assert len(set(work_ids)) == 2
+    assert [row["id"] for row in rows] == [f"{work_id}_chapter_0001" for work_id in work_ids]
 
 
 def test_ingest_raw_text_script_preserves_path_boundaries_in_work_ids(tmp_path):
@@ -110,14 +118,45 @@ def test_ingest_raw_text_script_preserves_path_boundaries_in_work_ids(tmp_path):
 
     assert result.returncode == 0, result.stderr
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
-    assert [row["work_id"] for row in rows] == ["a__b", "a__book", "a_b", "a_book"]
+    work_ids = [row["work_id"] for row in rows]
+    assert work_ids[0].startswith("a__b__")
+    assert work_ids[1].startswith("a__book__")
+    assert work_ids[2].startswith("a_b__")
+    assert work_ids[3].startswith("a_book__")
     assert len({row["work_id"] for row in rows}) == 4
-    assert [row["id"] for row in rows] == [
-        "a__b_chapter_0001",
-        "a__book_chapter_0001",
-        "a_b_chapter_0001",
-        "a_book_chapter_0001",
-    ]
+    assert [row["id"] for row in rows] == [f"{work_id}_chapter_0001" for work_id in work_ids]
+
+
+def test_ingest_raw_text_script_uses_hashes_to_avoid_sanitized_work_id_collisions(tmp_path):
+    input_dir = tmp_path / "raw"
+    (input_dir / "a").mkdir(parents=True)
+    (input_dir / "a" / "b.txt").write_text("第1章 开始\n\n林默回来了。", encoding="utf-8")
+    (input_dir / "a__b.txt").write_text("第1章 开始\n\n苏小满愣住。", encoding="utf-8")
+    (input_dir / "a b.txt").write_text("第1章 开始\n\n雨声很急。", encoding="utf-8")
+    (input_dir / "a_b.txt").write_text("第1章 开始\n\n灯火亮起。", encoding="utf-8")
+    output_path = tmp_path / "chapters.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ingest_raw_text.py",
+            "--input-dir",
+            str(input_dir),
+            "--output",
+            str(output_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    work_ids = [row["work_id"] for row in rows]
+    id_prefixes = [row["id"].removesuffix("_chapter_0001") for row in rows]
+    assert len(work_ids) == 4
+    assert len(set(work_ids)) == 4
+    assert id_prefixes == work_ids
 
 
 def test_clean_chapters_script_runs_from_repo_root(tmp_path):

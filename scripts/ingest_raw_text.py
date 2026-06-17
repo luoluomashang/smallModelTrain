@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -15,14 +16,17 @@ from small_model_train.io_utils import read_text_auto, write_jsonl
 
 
 def work_id_from_path(path: Path, input_dir: Path) -> str:
-    relative_path = path.relative_to(input_dir).with_suffix("")
+    input_dir = input_dir.resolve()
+    relative_path = path.resolve().relative_to(input_dir).with_suffix("")
+    relative_path_posix = relative_path.as_posix()
     work_id_parts = []
     for part in relative_path.parts:
         sanitized = re.sub(r"\s+", "_", part)
         sanitized = re.sub(r"[^0-9A-Za-z_\-\u4e00-\u9fff]+", "_", sanitized)
         work_id_parts.append(sanitized.strip("_") or "part")
     work_id = "__".join(work_id_parts)
-    return work_id.strip("_") or "work"
+    digest = hashlib.sha1(relative_path_posix.encode("utf-8")).hexdigest()[:8]
+    return f"{work_id.strip('_') or 'work'}__{digest}"
 
 
 def main() -> None:
@@ -33,7 +37,7 @@ def main() -> None:
     args = parser.parse_args()
 
     rows: list[dict] = []
-    input_dir = Path(args.input_dir)
+    input_dir = Path(args.input_dir).resolve()
     for path in sorted(input_dir.rglob("*")):
         if path.suffix.lower() not in {".txt", ".md"}:
             continue

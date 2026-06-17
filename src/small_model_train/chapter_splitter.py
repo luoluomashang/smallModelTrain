@@ -11,7 +11,8 @@ CHAPTER_TITLE_RE = re.compile(
 )
 
 AUTHOR_NOTE_RE = re.compile(
-    r"^[ \t\u3000]*(?:作者有话说|作者的话|题外话)\s*[:：]?.*(?:\n(?!\s*$).*)*",
+    r"^[ \t\u3000]*(?:作者有话说|作者的话|题外话)\s*[:：]?.*"
+    r"(?:\n(?!\s*$)(?![ \t\u3000]*第\s*[零一二三四五六七八九十百千万0-9]+\s*[章节卷集部]).*)*",
     re.MULTILINE,
 )
 SEPARATOR_RE = re.compile(r"^\s*[-=*_]{3,}\s*$", re.MULTILINE)
