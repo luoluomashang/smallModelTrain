@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.text_utils import count_chinese_chars, normalize_newlines

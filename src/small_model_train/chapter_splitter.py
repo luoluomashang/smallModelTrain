@@ -6,11 +6,14 @@ from small_model_train.text_utils import count_chinese_chars, normalize_newlines
 
 
 CHAPTER_TITLE_RE = re.compile(
-    r"^(第[零一二三四五六七八九十百千万0-9]+[章节卷集部].*)$",
+    r"^[ \t\u3000]*(第\s*[零一二三四五六七八九十百千万0-9]+\s*[章节卷集部].*)$",
     re.MULTILINE,
 )
 
-AUTHOR_NOTE_RE = re.compile(r"^作者有话说[:：].*$", re.MULTILINE)
+AUTHOR_NOTE_RE = re.compile(
+    r"^[ \t\u3000]*(?:作者有话说|作者的话|题外话)\s*[:：]?.*(?:\n(?!\s*$).*)*",
+    re.MULTILINE,
+)
 SEPARATOR_RE = re.compile(r"^\s*[-=*_]{3,}\s*$", re.MULTILINE)
 
 
@@ -42,14 +45,29 @@ def split_chapters(
         ]
 
     chapters: list[dict] = []
-    for index, match in enumerate(matches, start=1):
+    preface = normalize_newlines(cleaned[: matches[0].start()])
+    if preface:
+        chapters.append(
+            {
+                "id": f"{work_id}_chapter_0001",
+                "work_id": work_id,
+                "chapter_title": "前置正文",
+                "text": preface,
+                "char_count_zh": count_chinese_chars(preface),
+                "quality_tag": quality_tag,
+                "split": split,
+            }
+        )
+
+    for index, match in enumerate(matches):
         start = match.end()
-        end = matches[index].start() if index < len(matches) else len(cleaned)
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(cleaned)
+        chapter_number = len(chapters) + 1
         title = match.group(1).strip()
         body = normalize_newlines(cleaned[start:end])
         chapters.append(
             {
-                "id": f"{work_id}_chapter_{index:04d}",
+                "id": f"{work_id}_chapter_{chapter_number:04d}",
                 "work_id": work_id,
                 "chapter_title": title,
                 "text": body,
