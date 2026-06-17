@@ -323,7 +323,7 @@ def test_split_chapters_extracts_numbered_chapters():
         "work_001_chapter_0002",
     ]
     assert chapters[0]["chapter_title"] == "第1章 开始"
-    assert chapters[0]["char_count_zh"] == 6
+    assert chapters[0]["char_count_zh"] == 5
     assert chapters[0]["quality_tag"] == "A"
     assert chapters[0]["split"] == "train"
 
