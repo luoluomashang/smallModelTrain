@@ -78,10 +78,45 @@ def test_ingest_raw_text_script_runs_from_repo_root_and_uses_unique_work_ids(tmp
 
     assert result.returncode == 0, result.stderr
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
-    assert [row["work_id"] for row in rows] == ["alpha_book", "beta_book"]
+    assert [row["work_id"] for row in rows] == ["alpha__book", "beta__book"]
     assert [row["id"] for row in rows] == [
-        "alpha_book_chapter_0001",
-        "beta_book_chapter_0001",
+        "alpha__book_chapter_0001",
+        "beta__book_chapter_0001",
+    ]
+
+
+def test_ingest_raw_text_script_preserves_path_boundaries_in_work_ids(tmp_path):
+    input_dir = tmp_path / "raw"
+    (input_dir / "a").mkdir(parents=True)
+    (input_dir / "a" / "book.txt").write_text("第1章 开始\n\n林默回来了。", encoding="utf-8")
+    (input_dir / "a_book.txt").write_text("第1章 开始\n\n苏小满愣住。", encoding="utf-8")
+    (input_dir / "a b.txt").write_text("第1章 开始\n\n雨声很急。", encoding="utf-8")
+    (input_dir / "a" / "b.txt").write_text("第1章 开始\n\n灯火亮起。", encoding="utf-8")
+    output_path = tmp_path / "chapters.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ingest_raw_text.py",
+            "--input-dir",
+            str(input_dir),
+            "--output",
+            str(output_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert [row["work_id"] for row in rows] == ["a__b", "a__book", "a_b", "a_book"]
+    assert len({row["work_id"] for row in rows}) == 4
+    assert [row["id"] for row in rows] == [
+        "a__b_chapter_0001",
+        "a__book_chapter_0001",
+        "a_b_chapter_0001",
+        "a_book_chapter_0001",
     ]
 
 

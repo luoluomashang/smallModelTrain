@@ -16,8 +16,12 @@ from small_model_train.io_utils import read_text_auto, write_jsonl
 
 def work_id_from_path(path: Path, input_dir: Path) -> str:
     relative_path = path.relative_to(input_dir).with_suffix("")
-    work_id = re.sub(r"[\s/\\]+", "_", str(relative_path))
-    work_id = re.sub(r"[^0-9A-Za-z_\-\u4e00-\u9fff]+", "_", work_id)
+    work_id_parts = []
+    for part in relative_path.parts:
+        sanitized = re.sub(r"\s+", "_", part)
+        sanitized = re.sub(r"[^0-9A-Za-z_\-\u4e00-\u9fff]+", "_", sanitized)
+        work_id_parts.append(sanitized.strip("_") or "part")
+    work_id = "__".join(work_id_parts)
     return work_id.strip("_") or "work"
 
 
