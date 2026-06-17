@@ -1,0 +1,27 @@
+model_name_or_path: Qwen/Qwen3-4B-Instruct-2507
+template: qwen3
+stage: sft
+do_train: true
+finetuning_type: lora
+quantization_bit: 4
+quantization_method: bitsandbytes
+
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: all
+
+dataset: sft_chapter_v1
+dataset_dir: data_sft
+cutoff_len: 8192
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 3.0e-5
+num_train_epochs: 2
+
+bf16: true
+gradient_checkpointing: true
+logging_steps: 10
+save_steps: 200
+save_total_limit: 3
+output_dir: outputs/sft_v1
