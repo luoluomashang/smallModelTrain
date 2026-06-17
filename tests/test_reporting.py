@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -33,6 +34,20 @@ def test_build_markdown_report_contains_decision():
     )
     assert "# SFT v1" in report
     assert "是否进入下一阶段" in report
+
+
+def test_build_markdown_report_renders_config_as_valid_json():
+    report = build_markdown_report(
+        title="SFT v1",
+        scores=[],
+        config_snapshot={"enabled": True, "threshold": None, "model": "qwen3"},
+    )
+
+    json_block = report.split("```json\n", 1)[1].split("\n```", 1)[0]
+    config = json.loads(json_block)
+    assert config["enabled"] is True
+    assert config["threshold"] is None
+    assert config["model"] == "qwen3"
 
 
 def test_evaluate_outputs_cli_reads_scores_and_writes_report(tmp_path):

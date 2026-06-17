@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from statistics import mean
 
@@ -38,7 +39,7 @@ def build_markdown_report(
         "",
         "## 配置快照",
         "```json",
-        str(config_snapshot or {}).replace("'", '"'),
+        json.dumps(config_snapshot or {}, ensure_ascii=False, indent=2),
         "```",
         "",
         "## 汇总",
