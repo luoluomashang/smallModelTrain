@@ -34,6 +34,18 @@ def test_build_preference_candidates_skips_passing_scores():
     assert build_preference_candidates(cards, outputs, scores) == []
 
 
+def test_build_preference_candidates_keeps_soft_failures_even_when_hard_gate_passes():
+    cards = [{"id": "c1", "prompt": "卡", "style_contract": "契约"}]
+    outputs = [{"id": "c1", "output": "像AI总结一样的正文"}]
+    scores = [{"id": "c1", "hard_gate_pass": True, "failure_types": ["ai_trace"]}]
+
+    rows = build_preference_candidates(cards, outputs, scores)
+
+    assert len(rows) == 1
+    assert rows[0]["reject_type"] == "ai_trace"
+    assert rows[0]["rejected"] == "像AI总结一样的正文"
+
+
 def test_build_preference_candidates_renders_prompt_when_missing():
     cards = [
         {

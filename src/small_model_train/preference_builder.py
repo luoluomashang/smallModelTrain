@@ -12,12 +12,12 @@ def build_preference_candidates(
     outputs_by_id = {row["id"]: row for row in outputs}
     rows: list[dict] = []
     for score in scores:
-        if score.get("hard_gate_pass", True):
+        failure_types = score.get("failure_types", [])
+        if not failure_types:
             continue
         sample_id = score["id"]
         card = cards_by_id.get(sample_id, {})
         output = outputs_by_id.get(sample_id, {})
-        failure_types = score.get("failure_types", [])
         reject_type = failure_types[0] if failure_types else "unknown"
         rows.append(
             {

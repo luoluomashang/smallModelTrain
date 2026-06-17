@@ -7,13 +7,22 @@ from small_model_train.sft_builder import build_sft_rows
 
 
 def test_stage_one_pipeline_smoke():
-    raw = "第1章 开始\n\n" + "林默说加钱。" * 260
+    raw = (
+        "第1章 开始\n\n"
+        + "林默说加钱。"
+        * 260
+        + "\n\n第2章 转折\n\n"
+        + "林默说加钱。"
+        * 260
+    )
     chapters = split_chapters(raw, work_id="work")
     split = split_rows(chapters, eval_count=1, seed=1)
-    assert split[0]["split"] == "eval"
+    assert sum(1 for row in split if row["split"] == "eval") == 1
+    train_chapter = next(row for row in split if row["split"] == "train")
+    eval_chapter = next(row for row in split if row["split"] == "eval")
 
     card = {
-        "id": split[0]["id"],
+        "id": train_chapter["id"],
         "style_contract": "只输出正文。",
         "previous_summary": "上一章结束。",
         "chapter_goal": "完成交易。",
@@ -26,18 +35,19 @@ def test_stage_one_pipeline_smoke():
     }
     sft_rows = build_sft_rows([card], split)
     assert len(sft_rows) == 1
-    assert sft_rows[0]["output"] == split[0]["text"]
+    assert sft_rows[0]["output"] == train_chapter["text"]
 
-    score = score_output(split[0]["id"], card, split[0]["text"])
+    eval_card = {**card, "id": eval_chapter["id"]}
+    score = score_output(eval_chapter["id"], eval_card, eval_chapter["text"])
     assert score["hard_gate_pass"] is False
 
     candidates = build_preference_candidates(
-        [card],
-        [{"id": split[0]["id"], "output": split[0]["text"]}],
+        [eval_card],
+        [{"id": eval_chapter["id"], "output": eval_chapter["text"]}],
         [score],
     )
     assert len(candidates) == 1
-    assert candidates[0]["rejected"] == split[0]["text"]
+    assert candidates[0]["rejected"] == eval_chapter["text"]
     assert candidates[0]["source"] == "failed_eval"
     assert candidates[0]["reject_type"] == score["failure_types"][0]
 

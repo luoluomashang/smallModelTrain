@@ -36,6 +36,55 @@ def test_build_markdown_report_contains_decision():
     assert "是否进入下一阶段" in report
 
 
+def test_build_markdown_report_contains_acceptance_sections():
+    report = build_markdown_report(
+        title="SFT v1",
+        scores=[
+            {
+                "id": "a",
+                "hard_gate_pass": True,
+                "failure_types": [],
+                "char_count_zh": 2200,
+                "score_total": 90,
+                "sub_scores": {"style": 80, "structure": 100},
+            },
+            {
+                "id": "b",
+                "hard_gate_pass": False,
+                "failure_types": ["ai_trace", "format"],
+                "char_count_zh": 1800,
+                "score_total": 70,
+                "sub_scores": {"style": 60, "structure": 80},
+            },
+        ],
+        config_snapshot={
+            "dataset": {"version": "stage1-v1", "sample_count": 2},
+            "inference": {"temperature": 0.7, "top_p": 0.9},
+        },
+    )
+
+    assert "## 数据与推理" in report
+    assert '"version": "stage1-v1"' in report
+    assert '"temperature": 0.7' in report
+    assert "## 100 分制评分" in report
+    assert "- 100 分制均分：80" in report
+    assert "- style：70" in report
+    assert "- structure：90" in report
+    assert "## 偏好候选 Top 20" in report
+    assert "- b: ai_trace, format" in report
+
+
+def test_build_markdown_report_marks_missing_100_point_scores():
+    report = build_markdown_report(
+        title="SFT v1",
+        scores=[{"id": "a", "hard_gate_pass": True, "failure_types": [], "char_count_zh": 2200}],
+        config_snapshot={},
+    )
+
+    assert "- 100 分制均分：未提供" in report
+    assert "- 分项均分：未提供" in report
+
+
 def test_build_markdown_report_renders_config_as_valid_json():
     report = build_markdown_report(
         title="SFT v1",
