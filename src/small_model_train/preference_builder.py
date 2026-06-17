@@ -22,7 +22,7 @@ def build_preference_candidates(
         rows.append(
             {
                 "id": sample_id,
-                "prompt": card.get("prompt") or render_sft_input(card),
+                "prompt": card["prompt"] if "prompt" in card else render_sft_input(card),
                 "rejected": output.get("output", output.get("text", "")),
                 "reject_type": reject_type,
                 "chosen": "",

@@ -58,6 +58,16 @@ def test_build_preference_candidates_renders_prompt_when_missing():
     assert "只输出正文" in rows[0]["prompt"]
 
 
+def test_build_preference_candidates_preserves_explicit_empty_prompt():
+    cards = [{"id": "c1", "prompt": ""}]
+    outputs = [{"id": "c1", "output": "坏正文"}]
+    scores = [{"id": "c1", "hard_gate_pass": False, "failure_types": ["format"]}]
+
+    rows = build_preference_candidates(cards, outputs, scores)
+
+    assert rows[0]["prompt"] == ""
+
+
 def test_build_preference_candidates_uses_text_when_output_missing():
     cards = [{"id": "c1", "prompt": "卡", "style_contract": "契约"}]
     outputs = [{"id": "c1", "text": "文本正文"}]
