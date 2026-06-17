@@ -10,6 +10,8 @@ def test_stage_one_pipeline_smoke():
     raw = "第1章 开始\n\n" + "林默说加钱。" * 260
     chapters = split_chapters(raw, work_id="work")
     split = split_rows(chapters, eval_count=1, seed=1)
+    assert split[0]["split"] == "eval"
+
     card = {
         "id": split[0]["id"],
         "style_contract": "只输出正文。",
@@ -27,12 +29,20 @@ def test_stage_one_pipeline_smoke():
     assert sft_rows[0]["output"] == split[0]["text"]
 
     score = score_output(split[0]["id"], card, split[0]["text"])
+    assert score["hard_gate_pass"] is False
+
     candidates = build_preference_candidates(
         [card],
         [{"id": split[0]["id"], "output": split[0]["text"]}],
         [score],
     )
+    assert len(candidates) == 1
+    assert candidates[0]["rejected"] == split[0]["text"]
+    assert candidates[0]["source"] == "failed_eval"
+    assert candidates[0]["reject_type"] == score["failure_types"][0]
+
     report = build_markdown_report("Smoke", [score], {"model": "qwen3"})
     assert "Smoke" in report
     assert "配置快照" in report
-    assert isinstance(candidates, list)
+    assert "样本数：1" in report
+    assert "继续修数据和配置" in report
