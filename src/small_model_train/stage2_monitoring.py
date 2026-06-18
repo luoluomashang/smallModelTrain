@@ -70,6 +70,13 @@ ADAPTER_SAVE_CONTEXT_MARKERS = (
     "adapter_model",
 )
 
+HIGH_SPECIFICITY_ERROR_TYPES = (
+    "cuda_oom",
+    "bnb_load_error",
+    "tokenizer_error",
+    "llamafactory_error",
+)
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -98,6 +105,11 @@ def append_event(
 
 def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str]:
     lowered_stderr = stderr.lower()
+
+    specific_error = _match_error_rule(lowered_stderr, HIGH_SPECIFICITY_ERROR_TYPES)
+    if specific_error is not None:
+        return _error_result(specific_error)
+
     if _contains_any(lowered_stderr, DATASET_CONTEXT_MARKERS):
         return _error_result("dataset_error")
 
@@ -108,12 +120,12 @@ def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str
             return _error_result("process_killed")
         return {"error_type": "none", "suggestion": "无"}
 
-    for rule in ERROR_RULES:
-        if any(marker in lowered_stderr for marker in rule["markers"]):
-            return {
-                "error_type": str(rule["error_type"]),
-                "suggestion": str(rule["suggestion"]),
-            }
+    remaining_error = _match_error_rule(
+        lowered_stderr,
+        exclude_error_types=HIGH_SPECIFICITY_ERROR_TYPES + ("dataset_error",),
+    )
+    if remaining_error is not None:
+        return _error_result(remaining_error)
 
     if exit_code not in (0, None):
         return _error_result("process_killed")
@@ -194,6 +206,22 @@ def _error_result(error_type: str) -> dict[str, str]:
                 "suggestion": str(rule["suggestion"]),
             }
     return {"error_type": error_type, "suggestion": ""}
+
+
+def _match_error_rule(
+    text: str,
+    include_error_types: tuple[str, ...] | None = None,
+    exclude_error_types: tuple[str, ...] = (),
+) -> str | None:
+    for rule in ERROR_RULES:
+        error_type = str(rule["error_type"])
+        if include_error_types is not None and error_type not in include_error_types:
+            continue
+        if error_type in exclude_error_types:
+            continue
+        if any(marker in text for marker in rule["markers"]):
+            return error_type
+    return None
 
 
 def _contains_any(text: str, markers: tuple[str, ...]) -> bool:

@@ -39,6 +39,18 @@ def test_classify_training_error_detects_cuda_oom():
     assert "降低 cutoff_len" in result["suggestion"]
 
 
+def test_classify_training_error_prefers_cuda_oom_over_dataset_context():
+    result = classify_training_error(
+        "RuntimeError: CUDA out of memory while iterating dataset",
+        1,
+    )
+
+    assert result == {
+        "error_type": "cuda_oom",
+        "suggestion": EXPECTED_SUGGESTIONS["cuda_oom"],
+    }
+
+
 def test_classify_training_error_detects_dataset_error():
     result = classify_training_error("FileNotFoundError: dataset_info.json", 1)
 
@@ -61,6 +73,27 @@ def test_classify_training_error_treats_data_permission_denied_as_dataset_error(
     )
 
     assert result["error_type"] == "dataset_error"
+
+
+def test_classify_training_error_prefers_llamafactory_error_over_dataset_argument():
+    result = classify_training_error(
+        "llamafactory-cli: unrecognized arguments: --dataset foo",
+        1,
+    )
+
+    assert result == {
+        "error_type": "llamafactory_error",
+        "suggestion": EXPECTED_SUGGESTIONS["llamafactory_error"],
+    }
+
+
+def test_classify_training_error_does_not_treat_bare_permission_denied_as_adapter_save_error():
+    result = classify_training_error("Permission denied", 1)
+
+    assert result == {
+        "error_type": "process_killed",
+        "suggestion": EXPECTED_SUGGESTIONS["process_killed"],
+    }
 
 
 def test_classify_training_error_detects_empty_nonzero_exit_as_process_killed():
