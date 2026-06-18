@@ -71,7 +71,7 @@ def run_one_probe(
     root = Path(log_dir)
     root.mkdir(parents=True, exist_ok=True)
     slug = _probe_slug(index, probe)
-    # Every probe gets separate stdout, stderr, event, and GPU logs so the last successful phase is recoverable after a crash.
+    # Each probe's command, exit status, captured output, and GPU samples stay isolated.
     stdout_log = root / f"{slug}_stdout.log"
     stderr_log = root / f"{slug}_stderr.log"
     gpu_log = root / f"{slug}_gpu.jsonl"
@@ -194,7 +194,7 @@ def _communicate_streams(
     stdout_log: Path,
     stderr_log: Path,
 ) -> tuple[str, str]:
-    # The parent streams both pipes while the child runs; this avoids losing buffered output when the child exits abruptly.
+    # The parent captures flushed stdout/stderr while the child runs and avoids pipe backpressure.
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     _write_text(stdout_log, "")

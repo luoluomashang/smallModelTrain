@@ -2,7 +2,7 @@
 
 The functions here convert noisy launcher output into durable evidence. They do
 not mark training successful; callers still decide from subprocess exit codes
-and adapter checks.
+and any separate adapter checks.
 """
 
 from __future__ import annotations

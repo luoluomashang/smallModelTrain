@@ -2,7 +2,7 @@
 
 This module builds LLaMA-Factory commands and supervises them from the parent
 process. The parent keeps stdout, stderr, event logs, GPU samples, and failure
-summaries so a child crash does not erase the reason the run failed.
+summaries, which helps preserve diagnostic evidence when a child fails.
 """
 
 from __future__ import annotations
