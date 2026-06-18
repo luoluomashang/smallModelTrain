@@ -58,6 +58,8 @@
 
 - `stage2_training.py` 的错误分类由调用点把已捕获的 stdout/stderr 合并后传入 classifier；报告不应表述成 classifier 独立读取两个流。
 - OOM probe 与训练监督会保留父进程捕获到的事件、GPU 样本和输出日志；如果子进程被硬杀且输出未 flush，仍只能保留已经捕获到的证据。
+- 实现映射使用 PowerShell-safe definition scan 复核：`rg -n '^(def |class |@dataclass|if __name__|""")' src\small_model_train scripts tests`；Stage 1 与 Stage 2 矩阵中列出的核心模块、脚本入口和测试均有对应定义或测试覆盖。
+- `docs/stage1-pipeline-guide.zh.md` 示例已与当前实现 schema 对齐：章节卡使用 `id`、`chapter_goal`、`chapter_structure`、`character_states`、`must_include`、`must_not_include`、`source_text` 等字段；评分行使用 `id`、`hard_gate_pass`、`failure_types`、`ai_trace_count`、`must_include_coverage`、`forbidden_hits` 等字段。
 
 ## 5. 已知合理边界
 
@@ -84,7 +86,9 @@
 | Task 3 targeted Stage 2 tests | 既有证据：`46 passed in 0.24s`；fixup 后 `46 passed in 0.25s`。 |
 | Task 1 red-flag scan over `docs src scripts` | 既有证据：Task 1 时间点无命中；后续如果扫描包含本审计报告或历史计划/规格，可能出现被审查类别或计划模板词命中，应按具体文件判断。 |
 | Task checks：`git diff --check` | 既有证据：任务检查中无 whitespace errors。 |
-| `python -m pytest -q` | Fresh check after report creation: `128 passed in 1.04s`。 |
-| `$patterns = @("to" + "do", "tb" + "d", "place" + "holder", "fa" + "ke", "st" + "ub", "not" + "implemented", "pass$"); rg -n -i ($patterns -join "|") docs src scripts` | Fresh check exit code 1, no output；当前 `docs src scripts` 无命中。 |
-| `git diff --check` | Fresh check exit code 0, no output；未发现 whitespace errors。 |
-| `git status --short` | Fresh pre-commit check: only `?? docs/two-stage-implementation-audit.zh.md`。 |
+| `rg -n '^(def |class |@dataclass|if __name__|""")' src\small_model_train scripts tests` | Fresh review check: PowerShell-safe definition scan produced module definitions, script entry points, and test definitions for mapped Stage 1/Stage 2 files；矩阵文件均有实现或测试代表。 |
+| `rg -n "chapter_goal|chapter_structure|character_states|hard_gate_pass|failure_types|ai_trace_count|source_text|must_include|must_not_include" docs\stage1-pipeline-guide.zh.md src tests scripts` | Fresh review check: Stage 1 guide examples and implementation/tests both contain the current chapter-card and scoring schema fields。 |
+| `python -m pytest -q` | Fresh fixup checks: repeated full-suite runs passed with `128 passed`；recorded timings included `1.08s` and `1.06s`。 |
+| `$patterns = @("to" + "do", "tb" + "d", "place" + "holder", "fa" + "ke", "st" + "ub", "not" + "implemented", "pass$"); rg -n -i ($patterns -join "|") docs src scripts` | Fresh check exit code 1, no output；当前审计报告使用中文审查表述，命令里的 English red-flag patterns 以字符串拼接方式避免自命中，未发现 live `src`/`scripts` 命中。 |
+| `git diff --check` | Fresh fixup check exit code 0；仅输出 Windows 工作区提示 `LF will be replaced by CRLF the next time Git touches it`，未发现 whitespace errors。 |
+| `git status --short --branch` | Task 5 原提交前证据：only `?? docs/two-stage-implementation-audit.zh.md`；Task 5 原提交后证据：`## codex/two-stage-audit-docs`，工作区 clean。本次 fixup pre-commit fresh check: `## codex/two-stage-audit-docs` plus only ` M docs/two-stage-implementation-audit.zh.md`。 |
