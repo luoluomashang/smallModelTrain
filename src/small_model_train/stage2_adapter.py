@@ -73,31 +73,55 @@ def _check_safetensors_header(path: Path, errors: list[str]) -> None:
         return
 
     try:
-        payload = path.read_bytes()
+        file_size = path.stat().st_size
     except OSError as exc:
         errors.append(
-            f"adapter_model.safetensors read failed: {_format_exception(exc)}"
+            f"adapter_model.safetensors stat failed: {_format_exception(exc)}"
         )
         return
 
-    if len(payload) < 8:
+    if file_size < 8:
         errors.append(
             "adapter_model.safetensors invalid safetensors header: "
             "file is smaller than the 8-byte header length"
         )
         return
 
-    header_len = int.from_bytes(payload[:8], "little")
-    header_end = 8 + header_len
-    if len(payload) < header_end:
+    try:
+        with path.open("rb") as handle:
+            header_len_bytes = handle.read(8)
+            if len(header_len_bytes) < 8:
+                errors.append(
+                    "adapter_model.safetensors invalid safetensors header: "
+                    "could not read the 8-byte header length"
+                )
+                return
+
+            header_len = int.from_bytes(header_len_bytes, "little")
+            header_end = 8 + header_len
+            if file_size < header_end:
+                errors.append(
+                    "adapter_model.safetensors invalid safetensors header: "
+                    f"file has {file_size} bytes but header declares {header_len} bytes"
+                )
+                return
+
+            header_bytes = handle.read(header_len)
+    except OSError as exc:
+        errors.append(
+            f"adapter_model.safetensors read failed: {_format_exception(exc)}"
+        )
+        return
+
+    if len(header_bytes) < header_len:
         errors.append(
             "adapter_model.safetensors invalid safetensors header: "
-            f"file has {len(payload)} bytes but header declares {header_len} bytes"
+            f"could not read declared {header_len} header bytes"
         )
         return
 
     try:
-        header = json.loads(payload[8:header_end].decode("utf-8"))
+        header = json.loads(header_bytes.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         errors.append(
             "adapter_model.safetensors invalid safetensors header: "

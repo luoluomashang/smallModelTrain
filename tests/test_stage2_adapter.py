@@ -97,6 +97,28 @@ def test_check_adapter_dir_reports_invalid_safetensors_header(tmp_path: Path):
     assert any("adapter_model.safetensors" in error for error in result["errors"])
 
 
+def test_check_adapter_dir_does_not_read_entire_safetensors_file(
+    tmp_path: Path, monkeypatch
+):
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text("{}", encoding="utf-8")
+    write_minimal_safetensors(adapter / "adapter_model.safetensors")
+    (adapter / "training_config_snapshot.yaml").write_text(
+        "output_dir: adapter\n", encoding="utf-8"
+    )
+
+    def fail_full_file_read(_path: Path) -> bytes:
+        raise OSError("full adapter weight read is not allowed")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_full_file_read)
+
+    result = check_adapter_dir(adapter)
+
+    assert result["passed"] is True
+    assert result["errors"] == []
+
+
 def test_render_adapter_report_contains_decision(tmp_path: Path):
     result = {
         "adapter_dir": str(tmp_path / "adapter"),
