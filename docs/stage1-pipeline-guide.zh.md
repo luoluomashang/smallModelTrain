@@ -17,6 +17,8 @@
 
 ## 2. 从原稿到报告的数据流
 
+第一阶段不是训练模型，而是把原稿整理成可训练、可评测、可复查的数据资产。
+
 ```mermaid
 flowchart TD
     A["原始小说文本 data_raw/novels"] --> B["ingest_raw_text.py 读取为 JSONL"]
