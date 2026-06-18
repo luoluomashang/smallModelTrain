@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import io
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -117,3 +119,42 @@ def test_run_oom_probe_returns_one_when_any_probe_fails(tmp_path: Path, monkeypa
     assert exit_code == 1
     assert "## Probe Results" in report.read_text(encoding="utf-8")
     assert "cuda_oom" in report.read_text(encoding="utf-8")
+
+
+def test_one_step_probe_snapshot_uses_supplied_sft_dataset(tmp_path: Path, monkeypatch):
+    from scripts import stage2_oom_probe_worker
+
+    config = tmp_path / "sft.yaml"
+    config.write_text(
+        "model_name_or_path: old_model\n"
+        "output_dir: old_output\n"
+        "dataset: old_dataset\n"
+        "dataset_dir: old_dataset_dir\n"
+        "cutoff_len: 8192\n",
+        encoding="utf-8",
+    )
+    sft_dataset = tmp_path / "data_sft" / "sft_chapter_v1.jsonl"
+    sft_dataset.parent.mkdir()
+    sft_dataset.write_text('{"text": "sample"}\n', encoding="utf-8")
+
+    def fake_run(command, **kwargs):
+        assert command[0:2] == ["llamafactory-cli", "train"]
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(stage2_oom_probe_worker.subprocess, "run", fake_run)
+    args = argparse.Namespace(
+        probe=5,
+        model_dir="model",
+        cards="cards.jsonl",
+        sft_dataset=str(sft_dataset),
+        config=str(config),
+        log_dir=str(tmp_path / "logs"),
+    )
+
+    exit_code = stage2_oom_probe_worker._probe_one_step_training(args)
+
+    snapshot = tmp_path / "logs" / "probe_5" / "training_config_snapshot.yaml"
+    snapshot_text = snapshot.read_text(encoding="utf-8")
+    assert exit_code == 0
+    assert str(sft_dataset) in snapshot_text
+    assert "old_dataset" not in snapshot_text

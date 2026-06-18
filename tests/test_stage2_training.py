@@ -315,6 +315,47 @@ def test_run_training_subprocess_records_phase_markers_from_streamed_logs(
     } <= seen_phases
 
 
+def test_run_training_subprocess_does_not_mark_prepare_lora_for_lora_rank_config(
+    tmp_path: Path,
+    monkeypatch,
+):
+    run = {
+        "name": "sft_smoke",
+        "command": ["llamafactory-cli", "train", "config.yaml"],
+        "event_log": str(tmp_path / "events.jsonl"),
+        "gpu_log": str(tmp_path / "gpu.jsonl"),
+        "stderr_log": str(tmp_path / "stderr.log"),
+        "stdout_log": str(tmp_path / "stdout.log"),
+    }
+
+    class FakePopen:
+        def __init__(self, *_args, **_kwargs):
+            self.stdout = io.StringIO("training_config: lora_rank: 8\n")
+            self.stderr = io.StringIO("")
+            self.returncode = 0
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(stage2_training.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stage2_training, "collect_gpu_processes", lambda: [])
+
+    result = run_training_subprocess(run)
+
+    events = [
+        json.loads(line)
+        for line in Path(run["event_log"]).read_text(encoding="utf-8").splitlines()
+    ]
+    assert result["exit_code"] == 0
+    assert not any(
+        event["phase"] == "prepare_lora" and event["status"] == "seen_in_log"
+        for event in events
+    )
+
+
 def test_run_training_subprocess_classifies_stdout_oom_and_writes_failure_report(
     tmp_path: Path,
     monkeypatch,

@@ -108,10 +108,16 @@ def _probe_tokenize_one_sample(model_dir: str, cards: str) -> int:
 
 
 def _probe_one_step_training(args: argparse.Namespace) -> int:
+    sft_dataset = Path(args.sft_dataset)
     probe_overrides = {
         5: {"cutoff_len": 8192, "max_steps": 1},
         6: {"cutoff_len": 6144, "max_steps": 1},
         7: {"cutoff_len": 6144, "lora_rank": 8, "max_steps": 1},
+    }
+    overrides = {
+        **probe_overrides[args.probe],
+        "dataset": str(sft_dataset),
+        "dataset_dir": str(sft_dataset.parent),
     }
     log_dir = Path(args.log_dir)
     probe_dir = log_dir / f"probe_{args.probe}"
@@ -122,7 +128,7 @@ def _probe_one_step_training(args: argparse.Namespace) -> int:
         output_config=config_path,
         model_dir=args.model_dir,
         output_dir=output_dir,
-        overrides=probe_overrides[args.probe],
+        overrides=overrides,
     )
     print(
         "one-step training snapshot: "

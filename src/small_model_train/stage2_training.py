@@ -33,7 +33,10 @@ LOG_PHASE_MARKERS = (
         "load_base_model_4bit",
         ("load 4-bit base model", "load 4bit base model", "4-bit base model"),
     ),
-    ("prepare_lora", ("prepare lora", "preparing lora", "inject lora", "lora")),
+    (
+        "prepare_lora",
+        ("prepare lora", "preparing lora", "inject lora", "lora adapter", "peft model"),
+    ),
     ("tokenize_dataset", ("tokenize dataset", "tokenizing dataset")),
     ("first_forward", ("first forward", "first_forward")),
     ("first_backward", ("first backward", "first_backward")),
