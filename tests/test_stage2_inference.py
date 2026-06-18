@@ -327,6 +327,52 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
     assert "cuda_oom" in captured.err
 
 
+def test_non_dry_run_failure_classifies_stdout_only_cuda_oom(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    from scripts import run_eval_inference
+
+    completed = subprocess.CompletedProcess(
+        args=["python", "worker"],
+        returncode=23,
+        stdout="RuntimeError: CUDA out of memory\n",
+        stderr="",
+    )
+
+    monkeypatch.setattr(
+        run_eval_inference.subprocess,
+        "run",
+        lambda *args, **kwargs: completed,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_eval_inference.main(
+            [
+                "--cards",
+                str(tmp_path / "cards.jsonl"),
+                "--model-dir",
+                "model",
+                "--adapter-dir",
+                "adapter",
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--event-log",
+                str(tmp_path / "events.jsonl"),
+                "--stderr-log",
+                str(tmp_path / "stderr.log"),
+                "--stdout-log",
+                str(tmp_path / "stdout.log"),
+            ]
+        )
+
+    events = _read_jsonl(tmp_path / "events.jsonl")
+    assert exc_info.value.code == 23
+    assert events[-1]["detail"]["error"]["error_type"] == "cuda_oom"
+    assert "cuda_oom" in capsys.readouterr().err
+
+
 def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
     tmp_path: Path,
     monkeypatch,

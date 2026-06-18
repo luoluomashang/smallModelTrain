@@ -184,6 +184,8 @@ def render_failure_summary(
     last_gpu_samples: list[dict[str, Any]],
     exit_code: int | None,
     stderr_tail: str,
+    stdout_tail: str = "",
+    combined_tail: str | None = None,
 ) -> str:
     lines = [
         "# Training Failure Summary",
@@ -197,7 +199,12 @@ def render_failure_summary(
     lines.extend(_render_dict_rows(last_events))
     lines.extend(["", "## Last GPU Samples"])
     lines.extend(_render_dict_rows(last_gpu_samples))
-    lines.extend(["", "## stderr tail", "```text", stderr_tail, "```", ""])
+    if combined_tail is not None:
+        lines.extend(["", "## combined tail", "```text", combined_tail, "```"])
+    lines.extend(["", "## stderr tail", "```text", stderr_tail, "```"])
+    if stdout_tail:
+        lines.extend(["", "## stdout tail", "```text", stdout_tail, "```"])
+    lines.append("")
     return "\n".join(lines)
 
 

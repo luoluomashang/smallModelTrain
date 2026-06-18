@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         append_event(args.event_log, PHASE, "ok", {"exit_code": returncode})
         return 0
 
-    error = classify_training_error(stderr, returncode)
+    error = classify_training_error(stderr + "\n" + stdout, returncode)
     append_event(
         args.event_log,
         PHASE,

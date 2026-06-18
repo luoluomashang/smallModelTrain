@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
+import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +17,7 @@ from small_model_train.stage2_monitoring import (
     classify_training_error,
     collect_gpu_processes,
     now_iso,
+    render_failure_summary,
 )
 
 SMOKE_OVERRIDES = {
@@ -22,6 +26,20 @@ SMOKE_OVERRIDES = {
     "logging_steps": 5,
     "num_train_epochs": 1,
 }
+
+LOG_PHASE_MARKERS = (
+    ("load_tokenizer", ("loading tokenizer", "load tokenizer", "autotokenizer")),
+    (
+        "load_base_model_4bit",
+        ("load 4-bit base model", "load 4bit base model", "4-bit base model"),
+    ),
+    ("prepare_lora", ("prepare lora", "preparing lora", "inject lora", "lora")),
+    ("tokenize_dataset", ("tokenize dataset", "tokenizing dataset")),
+    ("first_forward", ("first forward", "first_forward")),
+    ("first_backward", ("first backward", "first_backward")),
+    ("first_optimizer_step", ("first optimizer step", "first_optimizer_step")),
+    ("save_adapter", ("save adapter", "saving adapter", "save_pretrained")),
+)
 
 
 def validate_training_inputs(
@@ -71,6 +89,7 @@ def build_train_run(
         "gpu_log": str(log_path / f"{name}_gpu.jsonl"),
         "stderr_log": str(log_path / f"{name}_stderr.log"),
         "stdout_log": str(log_path / f"{name}_stdout.log"),
+        "failure_report": str(log_path / f"{name}_failure_report.md"),
     }
 
 
@@ -98,6 +117,9 @@ def run_training_dry(run: dict[str, Any]) -> dict[str, Any]:
 
 def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
     command_text = _command_text(run["command"])
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    seen_phases: set[str] = set()
     append_event(
         run["event_log"],
         "launch_train_subprocess",
@@ -105,27 +127,49 @@ def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
         {"run": run["name"], "command": command_text},
     )
     _append_gpu_sample(run, "before_subprocess")
-    stdout = ""
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             run["command"],
-            capture_output=True,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,
         )
-        exit_code = result.returncode
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
+        _append_gpu_sample(run, "during_subprocess")
+        stdout_thread = _start_stream_thread(
+            process.stdout,
+            run.get("stdout_log"),
+            stdout_chunks,
+            run,
+            seen_phases,
+        )
+        stderr_thread = _start_stream_thread(
+            process.stderr,
+            run.get("stderr_log"),
+            stderr_chunks,
+            run,
+            seen_phases,
+        )
+        interval = float(run.get("gpu_sample_interval_seconds", 2.0))
+        while process.poll() is None:
+            time.sleep(max(interval, 0.001))
+            _append_gpu_sample(run, "during_subprocess")
+        exit_code = process.wait()
+        stdout_thread.join()
+        stderr_thread.join()
     except (FileNotFoundError, OSError) as exc:
         exit_code = 127
-        stderr = f"{type(exc).__name__}: {exc}"
+        stderr_chunks.append(f"{type(exc).__name__}: {exc}")
+        _write_text_log(run.get("stdout_log"), "")
+        _write_text_log(run["stderr_log"], stderr_chunks[0])
     finally:
         _append_gpu_sample(run, "after_subprocess")
 
-    _write_text_log(run.get("stdout_log"), stdout)
-    _write_text_log(run["stderr_log"], stderr)
+    stdout = "".join(stdout_chunks)
+    stderr = "".join(stderr_chunks)
+    combined_output = stderr + "\n" + stdout
 
-    error = classify_training_error(stderr, exit_code)
+    error = classify_training_error(combined_output, exit_code)
     status = "ok" if exit_code == 0 else "failed"
     append_event(
         run["event_log"],
@@ -137,6 +181,8 @@ def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
             "error": error,
         },
     )
+    if exit_code != 0:
+        _write_failure_report(run, error, exit_code, stdout, stderr, combined_output)
 
     return {
         "exit_code": exit_code,
@@ -156,6 +202,117 @@ def _write_text_log(path: str | Path | None, text: str) -> None:
     log_path = Path(path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(text, encoding="utf-8")
+
+
+def _start_stream_thread(
+    stream: Any,
+    log_path: str | Path | None,
+    chunks: list[str],
+    run: dict[str, Any],
+    seen_phases: set[str],
+) -> threading.Thread:
+    _write_text_log(log_path, "")
+    thread = threading.Thread(
+        target=_stream_output,
+        args=(stream, log_path, chunks, run, seen_phases),
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
+def _stream_output(
+    stream: Any,
+    log_path: str | Path | None,
+    chunks: list[str],
+    run: dict[str, Any],
+    seen_phases: set[str],
+) -> None:
+    if stream is None:
+        return
+
+    for line in stream:
+        chunks.append(line)
+        _append_text_log(log_path, line)
+        _record_log_markers(run, seen_phases, line)
+
+
+def _append_text_log(path: str | Path | None, text: str) -> None:
+    if path is None:
+        return
+
+    log_path = Path(path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _record_log_markers(
+    run: dict[str, Any],
+    seen_phases: set[str],
+    text: str,
+) -> None:
+    lowered = text.lower()
+    for phase, markers in LOG_PHASE_MARKERS:
+        if phase in seen_phases:
+            continue
+        if any(marker in lowered for marker in markers):
+            seen_phases.add(phase)
+            append_event(
+                run["event_log"],
+                phase,
+                "seen_in_log",
+                {"run": run["name"], "line": text.strip()},
+            )
+
+
+def _write_failure_report(
+    run: dict[str, Any],
+    error: dict[str, str],
+    exit_code: int | None,
+    stdout: str,
+    stderr: str,
+    combined_output: str,
+) -> None:
+    report_path = run.get("failure_report")
+    if not report_path:
+        return
+
+    summary = render_failure_summary(
+        error=error,
+        last_events=_read_jsonl_tail(run.get("event_log"), 20),
+        last_gpu_samples=_read_jsonl_tail(run.get("gpu_log"), 10),
+        exit_code=exit_code,
+        stderr_tail=_tail_text(stderr),
+        stdout_tail=_tail_text(stdout),
+        combined_tail=_tail_text(combined_output),
+    )
+    path = Path(report_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(summary, encoding="utf-8")
+
+
+def _read_jsonl_tail(path: str | Path | None, limit: int) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+    jsonl_path = Path(path)
+    if not jsonl_path.exists():
+        return []
+
+    rows: deque[dict[str, Any]] = deque(maxlen=limit)
+    for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return list(rows)
+
+
+def _tail_text(text: str, max_lines: int = 80) -> str:
+    lines = text.splitlines()
+    return "\n".join(lines[-max_lines:])
 
 
 def _append_gpu_sample(run: dict[str, Any], phase: str) -> None:

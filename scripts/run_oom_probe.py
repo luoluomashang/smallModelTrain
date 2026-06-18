@@ -1,47 +1,52 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
-PROBES = [
-    "Probe 1: load tokenizer and config",
-    "Probe 2: load 4-bit base model",
-    "Probe 3: inject LoRA",
-    "Probe 4: tokenize one sample",
-    "Probe 5: cutoff_len=8192, max_steps=1",
-    "Probe 6: cutoff_len=6144, max_steps=1",
-    "Probe 7: cutoff_len=6144, lora_rank=8, max_steps=1",
-]
+from small_model_train.stage2_oom_probe import (
+    PROBES,
+    render_probe_report,
+    run_oom_probes,
+)
 
-
-def render_probe_report() -> str:
-    lines = ["# OOM Probe Report", "", "## Probe Plan"]
-    lines.extend(f"- {probe}" for probe in PROBES)
-    lines.extend(
-        [
-            "",
-            "## Interpretation",
-            "- Probe 2 失败：基座 4-bit 加载不稳，优先查 bitsandbytes / CUDA / 显存占用。",
-            "- Probe 3 失败：LoRA target 或 PEFT 配置问题。",
-            "- Probe 5 失败但 Probe 6 成功：8192 cutoff_len 过高。",
-            "- Probe 6 失败但 Probe 7 成功：LoRA rank 或反向传播显存压力过高。",
-            "- 所有 probe 通过但正式训练失败：检查数据长度分布、保存、日志或长时间运行稳定性。",
-            "",
-        ]
-    )
-    return "\n".join(lines)
+DEFAULT_MODEL_DIR = r"E:\models\Qwen3-4B-Instruct-2507"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR)
+    parser.add_argument("--cards", default="data_cards/eval_cards_50.jsonl")
+    parser.add_argument("--sft-dataset", default="data_sft/sft_chapter_v1.jsonl")
+    parser.add_argument("--config", default="configs/sft_qlora_qwen3_4b.yaml")
+    parser.add_argument("--log-dir", default="logs/training/oom_probe")
     parser.add_argument("--report", default="reports/oom_probe_report.md")
-    args = parser.parse_args()
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.dry_run:
+        results = None
+    else:
+        results = run_oom_probes(
+            model_dir=args.model_dir,
+            cards=args.cards,
+            sft_dataset=args.sft_dataset,
+            config=args.config,
+            log_dir=args.log_dir,
+        )
 
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(render_probe_report(), encoding="utf-8")
+    report_path.write_text(render_probe_report(results), encoding="utf-8")
     print(f"wrote OOM probe report to {report_path}")
+
+    if results is not None and any(result["status"] == "failed" for result in results):
+        return 1
     return 0
 
 

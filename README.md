@@ -37,13 +37,14 @@ python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507
 python scripts/check_training_env.py
 python scripts/run_sft_smoke.py --dry-run
 python scripts/run_sft_smoke.py
-python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_adapter_report.md --title "SFT Smoke Adapter Check"
+python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_report.md --title "SFT Smoke Adapter Check"
+python scripts/run_oom_probe.py --dry-run
+python scripts/run_oom_probe.py
 python scripts/run_sft_train.py
-python scripts/check_adapter.py --adapter-dir outputs/sft_v1 --report reports/sft_v1_adapter_report.md --title "SFT v1 Adapter Check"
+python scripts/check_adapter.py --adapter-dir outputs/sft_v1 --report reports/sft_v1_training_report.md --title "SFT v1 Adapter Check"
 python scripts/run_eval_inference.py
 python scripts/score_outputs.py --cards data_cards/eval_cards_50.jsonl --outputs outputs/sft_v1/generated.jsonl --output outputs/sft_v1/metrics.jsonl
 python scripts/evaluate_outputs.py --scores outputs/sft_v1/metrics.jsonl --report reports/sft_v1_report.md --title "SFT v1 Report"
-python scripts/run_oom_probe.py
 ```
 
 If a training or eval subprocess exits with CUDA OOM, launcher failure, or a crash, use the event log, stderr log, and `run_oom_probe.py` report to identify whether the failure is memory pressure, environment drift, or process termination before retrying.
