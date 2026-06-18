@@ -51,6 +51,17 @@ def test_classify_training_error_detects_empty_nonzero_exit_as_process_killed():
     assert result["error_type"] == "process_killed"
 
 
+def test_classify_training_error_returns_none_for_clean_exit_without_stderr():
+    assert classify_training_error("", 0) == {
+        "error_type": "none",
+        "suggestion": "无",
+    }
+    assert classify_training_error("", None) == {
+        "error_type": "none",
+        "suggestion": "无",
+    }
+
+
 def test_classify_training_error_returns_plan_suggestions_exactly():
     cases = [
         ("RuntimeError: CUDA out of memory", "cuda_oom"),
@@ -93,12 +104,12 @@ def test_render_failure_summary_contains_last_phase_and_gpu_sample():
     )
 
     assert "# Training Failure Summary" in summary
-    assert "1" in summary
+    assert "- Exit code: 1" in summary
     assert "first_backward" in summary
     assert "cuda_oom" in summary
     assert "降低 cutoff_len" in summary
     assert "## Last Events" in summary
     assert "## Last GPU Samples" in summary
     assert "15872" in summary
-    assert "```text" in summary
+    assert "```text\nCUDA out of memory\n```" in summary
     assert "CUDA out of memory" in summary

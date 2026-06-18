@@ -88,7 +88,7 @@ def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str
     if exit_code not in (0, None):
         return _error_result("process_killed")
 
-    return {"error_type": "none", "suggestion": ""}
+    return {"error_type": "none", "suggestion": "无"}
 
 
 def parse_gpu_process_samples(text: str) -> list[dict[str, int | str]]:
