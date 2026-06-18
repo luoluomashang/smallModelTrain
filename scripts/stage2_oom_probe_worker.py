@@ -1,3 +1,10 @@
+"""Worker process for isolated Stage 2 OOM probes.
+
+The parent probe runner starts this script repeatedly. Keeping risky model-load
+and one-step training work in this worker protects the parent process from
+losing diagnostic context after CUDA or dependency crashes.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -109,6 +116,7 @@ def _probe_tokenize_one_sample(model_dir: str, cards: str) -> int:
 
 def _probe_one_step_training(args: argparse.Namespace) -> int:
     sft_dataset = Path(args.sft_dataset)
+    # Probes 5-7 intentionally override cutoff_len/rank/max_steps to isolate the smallest setting that still fails.
     probe_overrides = {
         5: {"cutoff_len": 8192, "max_steps": 1},
         6: {"cutoff_len": 6144, "max_steps": 1},

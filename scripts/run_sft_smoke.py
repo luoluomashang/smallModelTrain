@@ -44,6 +44,7 @@ def main() -> int:
         log_dir=Path(args.log_dir),
         smoke=True,
     )
+    # dry-run is a preflight for command construction and should not be described as a trained adapter.
     result = run_training_dry(run) if args.dry_run else run_training_subprocess(run)
     print(result["command_text"])
     return int(result["exit_code"])

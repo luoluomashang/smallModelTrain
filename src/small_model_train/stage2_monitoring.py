@@ -1,3 +1,10 @@
+"""Stage 2 event logging, GPU sampling, and error classification.
+
+The functions here convert noisy launcher output into durable evidence. They do
+not mark training successful; callers still decide from subprocess exit codes
+and adapter checks.
+"""
+
 from __future__ import annotations
 
 import csv
@@ -104,6 +111,7 @@ def append_event(
 
 
 def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str]:
+    # Classification is advisory; a nonzero exit code still remains the source of truth for failure.
     if exit_code == 0:
         return {"error_type": "none", "suggestion": "无"}
 
@@ -187,6 +195,7 @@ def render_failure_summary(
     stdout_tail: str = "",
     combined_tail: str | None = None,
 ) -> str:
+    # Include stdout and stderr tails because some launchers print CUDA failures to stdout.
     lines = [
         "# Training Failure Summary",
         "",

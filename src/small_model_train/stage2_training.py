@@ -1,3 +1,10 @@
+"""Training subprocess supervision for Stage 2 QLoRA runs.
+
+This module builds LLaMA-Factory commands and supervises them from the parent
+process. The parent keeps stdout, stderr, event logs, GPU samples, and failure
+summaries so a child crash does not erase the reason the run failed.
+"""
+
 from __future__ import annotations
 
 import json
@@ -97,6 +104,7 @@ def build_train_run(
 
 
 def run_training_dry(run: dict[str, Any]) -> dict[str, Any]:
+    # This path only records the command and config snapshot; it is never evidence that training completed.
     command_text = _command_text(run["command"])
     append_event(
         run["event_log"],
@@ -119,6 +127,7 @@ def run_training_dry(run: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
+    # Real training enters here; stdout and stderr are streamed before classification so late crashes still leave logs.
     command_text = _command_text(run["command"])
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
@@ -277,6 +286,7 @@ def _write_failure_report(
     stderr: str,
     combined_output: str,
 ) -> None:
+    # The failure report is generated only after a nonzero exit so it cannot mask a failed run as successful.
     report_path = run.get("failure_report")
     if not report_path:
         return

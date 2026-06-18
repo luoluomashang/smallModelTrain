@@ -92,6 +92,7 @@ def main() -> int:
         log_dir=Path(args.log_dir),
         smoke=False,
     )
+    # full-run dry-run validates prerequisites and the launch command without consuming GPU memory.
     result = run_training_dry(run) if args.dry_run else run_training_subprocess(run)
     print(result["command_text"])
     return int(result["exit_code"])

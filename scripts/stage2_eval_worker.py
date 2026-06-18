@@ -1,3 +1,9 @@
+"""Worker process for fixed eval inference.
+
+The launcher keeps this GPU-heavy path in a child process so stdout, stderr, and
+exit codes remain visible even when model loading or generation fails.
+"""
+
 from __future__ import annotations
 
 import argparse
