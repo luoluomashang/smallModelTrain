@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from small_model_train.stage2_config import (
     build_llamafactory_command,
     make_training_snapshot,
@@ -53,6 +55,29 @@ def test_read_flat_yaml_skips_noise_and_parses_empty_values(tmp_path: Path):
         "template": "qwen3",
         "do_train": False,
     }
+
+
+def test_write_flat_yaml_keeps_scientific_float_safe_for_yaml(tmp_path: Path):
+    source = tmp_path / "source.yaml"
+    output = tmp_path / "output.yaml"
+    source.write_text("learning_rate: 3.0e-5\n", encoding="utf-8")
+
+    values = read_flat_yaml(source)
+    write_flat_yaml(output, values)
+
+    text = output.read_text(encoding="utf-8")
+    result = read_flat_yaml(output)
+
+    assert "learning_rate: 3.0e-05" in text.splitlines()
+    assert result["learning_rate"] == 3.0e-5
+    assert isinstance(result["learning_rate"], float)
+
+    try:
+        yaml = pytest.importorskip("yaml")
+    except pytest.skip.Exception:
+        return
+    pyyaml_result = yaml.safe_load(text)
+    assert isinstance(pyyaml_result["learning_rate"], float)
 
 
 def test_make_training_snapshot_overrides_model_output_and_smoke_values(

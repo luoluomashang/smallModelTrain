@@ -34,6 +34,12 @@ def format_scalar(value: Any) -> str:
         return str(value).lower()
     if value is None:
         return "null"
+    if isinstance(value, float):
+        text = str(value)
+        mantissa, marker, exponent = text.partition("e")
+        if marker and "." not in mantissa:
+            return f"{mantissa}.0e{exponent}"
+        return text
     return str(value)
 
 
