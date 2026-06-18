@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Callable
 
 REQUIRED_FILES = (
@@ -26,8 +26,10 @@ def check_model_files(model_dir: str | Path) -> dict[str, Any]:
         missing_files.append("model-*.safetensors")
 
     index_path = model_path / "model.safetensors.index.json"
+    indexed_shards: list[str] = []
     if index_path.is_file():
-        for shard_name in _read_indexed_shards(index_path, errors):
+        indexed_shards = _read_indexed_shards(index_path, errors)
+        for shard_name in indexed_shards:
             shard_path = model_path / shard_name
             if not shard_path.is_file() and shard_name not in missing_files:
                 missing_files.append(shard_name)
@@ -35,6 +37,14 @@ def check_model_files(model_dir: str | Path) -> dict[str, Any]:
     zero_size_files = [
         shard.name for shard in shards if shard.stat().st_size == 0
     ]
+    for shard_name in indexed_shards:
+        shard_path = model_path / shard_name
+        if (
+            shard_path.is_file()
+            and shard_path.stat().st_size == 0
+            and shard_name not in zero_size_files
+        ):
+            zero_size_files.append(shard_name)
     errors.extend([
         f"missing required file: {name}" for name in missing_files
     ])
@@ -56,26 +66,47 @@ def check_model_files(model_dir: str | Path) -> dict[str, Any]:
 def _read_indexed_shards(index_path: Path, errors: list[str]) -> list[str]:
     try:
         index_data = json.loads(index_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        errors.append(f"invalid model.safetensors.index.json: {exc}")
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        errors.append(f"invalid index: {_format_exception(exc)}")
         return []
 
     weight_map = index_data.get("weight_map") if isinstance(index_data, dict) else None
     if not isinstance(weight_map, dict):
-        errors.append("invalid model.safetensors.index.json: weight_map must be a dict")
+        errors.append("invalid index: weight_map must be a dict")
         return []
 
     shard_names: list[str] = []
     for layer_name, shard_name in weight_map.items():
         if not isinstance(shard_name, str):
             errors.append(
-                "invalid model.safetensors.index.json: "
+                "invalid index: "
                 f"weight_map entry {layer_name!r} must reference a shard filename"
             )
+            continue
+        if not _is_plain_shard_filename(shard_name):
+            errors.append(f"invalid shard path in index: {shard_name}")
             continue
         if shard_name not in shard_names:
             shard_names.append(shard_name)
     return shard_names
+
+
+def _is_plain_shard_filename(shard_name: str) -> bool:
+    windows_path = PureWindowsPath(shard_name)
+    posix_path = PurePosixPath(shard_name)
+    return (
+        bool(shard_name)
+        and shard_name not in {".", ".."}
+        and "/" not in shard_name
+        and "\\" not in shard_name
+        and ".." not in windows_path.parts
+        and ".." not in posix_path.parts
+        and not windows_path.drive
+        and not windows_path.is_absolute()
+        and not posix_path.is_absolute()
+        and windows_path.name == shard_name
+        and posix_path.name == shard_name
+    )
 
 
 def run_transformers_load_checks(
@@ -96,7 +127,7 @@ def run_transformers_load_checks(
             load_checks["config"] = "failed"
             load_checks["tokenizer"] = "failed"
             result.setdefault("errors", []).append(
-                f"transformers load check setup failed: {exc}"
+                f"transformers load check setup failed: {_format_exception(exc)}"
             )
             _recompute_passed(result)
             return result
@@ -149,9 +180,15 @@ def _run_loader(
         loader(model_dir)
     except Exception as exc:
         result["load_checks"][name] = "failed"
-        result.setdefault("errors", []).append(f"{name} load failed: {exc}")
+        result.setdefault("errors", []).append(
+            f"{name} load failed: {_format_exception(exc)}"
+        )
     else:
         result["load_checks"][name] = "passed"
+
+
+def _format_exception(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _recompute_passed(result: dict[str, Any]) -> None:

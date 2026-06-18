@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
 
-from small_model_train.stage2_model_check import check_model_files, render_model_check_report
+from small_model_train.stage2_model_check import (
+    check_model_files,
+    render_model_check_report,
+    run_transformers_load_checks,
+)
 
 
 def write_file(path: Path, content: str = "x") -> None:
@@ -89,6 +93,78 @@ def test_check_model_files_reports_missing_indexed_shards(tmp_path: Path):
     assert any(
         "model-00002-of-00002.safetensors" in error for error in result["errors"]
     )
+
+
+def test_check_model_files_rejects_unsafe_indexed_shard_paths(tmp_path: Path):
+    model_dir = tmp_path / "model"
+    write_file(model_dir / "config.json")
+    write_file(model_dir / "tokenizer.json")
+    write_file(model_dir / "tokenizer_config.json")
+    write_file(
+        model_dir / "model.safetensors.index.json",
+        json.dumps(
+            {
+                "weight_map": {
+                    "layer.a": "model-00001-of-00002.safetensors",
+                    "layer.b": "../model-00002-of-00002.safetensors",
+                }
+            }
+        ),
+    )
+    write_file(model_dir / "model-00001-of-00002.safetensors")
+    write_file(tmp_path / "model-00002-of-00002.safetensors")
+
+    result = check_model_files(model_dir)
+
+    assert result["passed"] is False
+    assert any(
+        "invalid shard path" in error
+        and "../model-00002-of-00002.safetensors" in error
+        for error in result["errors"]
+    )
+
+
+def test_check_model_files_reports_corrupt_index_bytes(tmp_path: Path):
+    model_dir = tmp_path / "model"
+    write_file(model_dir / "config.json")
+    write_file(model_dir / "tokenizer.json")
+    write_file(model_dir / "tokenizer_config.json")
+    write_file(model_dir / "model-00001-of-00001.safetensors")
+    index_path = model_dir / "model.safetensors.index.json"
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_bytes(b"\xff\xfe\xfa")
+
+    try:
+        result = check_model_files(model_dir)
+    except UnicodeDecodeError as exc:
+        raise AssertionError("check_model_files raised UnicodeDecodeError") from exc
+
+    assert result["passed"] is False
+    assert any("invalid index" in error for error in result["errors"])
+
+
+def test_run_transformers_load_checks_reports_exception_types(tmp_path: Path):
+    result = {
+        "model_dir": str(tmp_path / "model"),
+        "passed": True,
+        "missing_files": [],
+        "zero_size_files": [],
+        "shard_count": 1,
+        "load_checks": {"config": "not_run", "tokenizer": "not_run"},
+        "errors": [],
+    }
+
+    def raise_boom(_model_dir: str) -> None:
+        raise RuntimeError("boom")
+
+    run_transformers_load_checks(
+        result,
+        config_loader=raise_boom,
+        tokenizer_loader=raise_boom,
+    )
+
+    assert result["passed"] is False
+    assert any("RuntimeError: boom" in error for error in result["errors"])
 
 
 def test_render_model_check_report_contains_decision(tmp_path: Path):
