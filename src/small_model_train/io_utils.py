@@ -1,3 +1,10 @@
+"""Shared file I/O helpers for the two-stage training pipeline.
+
+The pipeline exchanges data through inspectable UTF-8 text and JSONL files
+instead of an in-memory service. That keeps every stage reproducible from the
+command line and leaves artifacts behind when a later training run fails.
+"""
+
 from __future__ import annotations
 
 import json

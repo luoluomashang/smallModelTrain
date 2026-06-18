@@ -1,3 +1,10 @@
+"""Rule-based output scoring and AI-trace detection.
+
+These scores are not a replacement for human literary review. They provide
+stable gates for length, required plot coverage, repetition, and generic AI
+phrasing so failed samples can be triaged consistently.
+"""
+
 from __future__ import annotations
 
 from small_model_train.text_utils import count_chinese_chars, repeated_ngram_ratio
@@ -17,6 +24,7 @@ AI_TRACE_PHRASES = [
 
 
 def detect_ai_trace(text: str) -> dict:
+    # The phrase list is a deterministic triage rule, not proof that a model generated the text.
     matches = [phrase for phrase in AI_TRACE_PHRASES if phrase in text]
     return {"count": len(matches), "matches": matches}
 

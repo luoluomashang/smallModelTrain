@@ -1,3 +1,9 @@
+"""Preference-candidate construction from failed scoring rows.
+
+Stage 1 only prepares candidate pairs for later preference work. It does not
+pretend that a reward model or DPO training loop has already been run.
+"""
+
 from __future__ import annotations
 
 from small_model_train.sft_builder import render_sft_input

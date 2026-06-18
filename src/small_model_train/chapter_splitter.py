@@ -1,3 +1,10 @@
+"""Raw novel cleanup and chapter extraction for Stage 1.
+
+This module turns messy source text into chapter records. It does not infer
+missing chapter cards; those remain an explicit human/agent-authored artifact
+so the SFT prompt does not accidentally leak the answer.
+"""
+
 from __future__ import annotations
 
 import re

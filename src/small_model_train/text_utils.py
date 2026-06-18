@@ -1,3 +1,9 @@
+"""Text statistics and normalization helpers used by Stage 1 scoring.
+
+These helpers are intentionally deterministic and model-free. Stage 1 needs
+cheap, repeatable checks before any GPU training is attempted.
+"""
+
 from __future__ import annotations
 
 import re

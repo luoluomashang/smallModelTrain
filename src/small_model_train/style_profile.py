@@ -1,3 +1,9 @@
+"""Style profile and style contract generation for Stage 1.
+
+The profile summarizes observable chapter statistics. The contract is a compact
+prompt-facing description, not a learned model of authorial style.
+"""
+
 from __future__ import annotations
 
 from statistics import mean

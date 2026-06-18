@@ -1,3 +1,10 @@
+"""SFT prompt construction from chapter cards and cleaned chapters.
+
+The builder joins explicit planning cards with target chapter text. It also
+guards against copying source_text into the prompt, because that would turn
+training into answer leakage rather than instruction following.
+"""
+
 from __future__ import annotations
 
 import re
@@ -8,6 +15,7 @@ SOURCE_LEAK_MIN_CHARS = 12
 
 
 def _find_source_text_leak(rendered_input: str, source_text: str, min_chars: int = SOURCE_LEAK_MIN_CHARS) -> str | None:
+    # This check catches long verbatim spans before SFT rows are written, preventing answer leakage into prompts.
     if not source_text:
         return None
     for match in re.finditer(r"[\u4e00-\u9fff]+", source_text):
@@ -85,6 +93,7 @@ def build_sft_rows(cards: list[dict], chapters: list[dict]) -> list[dict]:
     rows: list[dict] = []
     for card in cards:
         chapter = chapter_by_id.get(card["id"])
+        # Non-train rows are skipped deliberately; eval rows must stay unseen so later adapter scores mean something.
         if not chapter or not _is_trainable_chapter(chapter):
             continue
         rows.append(

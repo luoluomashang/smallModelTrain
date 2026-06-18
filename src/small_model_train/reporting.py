@@ -1,3 +1,9 @@
+"""Markdown reporting for Stage 1 scoring results.
+
+Reports are intentionally plain Markdown so they can be reviewed, committed, and
+compared without a dashboard or database.
+"""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +30,7 @@ def summarize_scores(scores: list[dict]) -> dict:
         for failure in score.get("failure_types", [])
     )
     avg_chars = mean([score.get("char_count_zh", 0) for score in scores]) if scores else 0
+    # Missing numeric metrics are ignored instead of coerced to zero so incomplete rows do not invent poor scores.
     score_totals = [
         float(score["score_total"])
         for score in scores
