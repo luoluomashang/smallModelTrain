@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,7 @@ def check_model_files(model_dir: str | Path) -> dict[str, Any]:
     missing_files = [
         name for name in REQUIRED_FILES if not (model_path / name).is_file()
     ]
+    errors: list[str] = []
 
     shards = sorted(
         shard for shard in model_path.glob("model-*.safetensors") if shard.is_file()
@@ -23,24 +25,57 @@ def check_model_files(model_dir: str | Path) -> dict[str, Any]:
     if not shards:
         missing_files.append("model-*.safetensors")
 
+    index_path = model_path / "model.safetensors.index.json"
+    if index_path.is_file():
+        for shard_name in _read_indexed_shards(index_path, errors):
+            shard_path = model_path / shard_name
+            if not shard_path.is_file() and shard_name not in missing_files:
+                missing_files.append(shard_name)
+
     zero_size_files = [
         shard.name for shard in shards if shard.stat().st_size == 0
     ]
-    errors = [
+    errors.extend([
         f"missing required file: {name}" for name in missing_files
-    ] + [
+    ])
+    errors.extend([
         f"zero-size model shard: {name}" for name in zero_size_files
-    ]
+    ])
 
     return {
         "model_dir": str(model_path),
-        "passed": not missing_files and not zero_size_files,
+        "passed": not missing_files and not zero_size_files and not errors,
         "missing_files": missing_files,
         "zero_size_files": zero_size_files,
         "shard_count": len(shards),
         "load_checks": {"config": "not_run", "tokenizer": "not_run"},
         "errors": errors,
     }
+
+
+def _read_indexed_shards(index_path: Path, errors: list[str]) -> list[str]:
+    try:
+        index_data = json.loads(index_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        errors.append(f"invalid model.safetensors.index.json: {exc}")
+        return []
+
+    weight_map = index_data.get("weight_map") if isinstance(index_data, dict) else None
+    if not isinstance(weight_map, dict):
+        errors.append("invalid model.safetensors.index.json: weight_map must be a dict")
+        return []
+
+    shard_names: list[str] = []
+    for layer_name, shard_name in weight_map.items():
+        if not isinstance(shard_name, str):
+            errors.append(
+                "invalid model.safetensors.index.json: "
+                f"weight_map entry {layer_name!r} must reference a shard filename"
+            )
+            continue
+        if shard_name not in shard_names:
+            shard_names.append(shard_name)
+    return shard_names
 
 
 def run_transformers_load_checks(

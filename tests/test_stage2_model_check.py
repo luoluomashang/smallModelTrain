@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from small_model_train.stage2_model_check import check_model_files, render_model_check_report
@@ -14,10 +15,13 @@ def test_check_model_files_passes_for_required_files(tmp_path: Path):
         "config.json",
         "tokenizer.json",
         "tokenizer_config.json",
-        "model.safetensors.index.json",
         "model-00001-of-00001.safetensors",
     ]:
         write_file(model_dir / name)
+    write_file(
+        model_dir / "model.safetensors.index.json",
+        json.dumps({"weight_map": {"layer.a": "model-00001-of-00001.safetensors"}}),
+    )
 
     result = check_model_files(model_dir)
 
@@ -58,6 +62,33 @@ def test_check_model_files_reports_missing_shards(tmp_path: Path):
     assert result["passed"] is False
     assert "model-*.safetensors" in result["missing_files"]
     assert any("model-*.safetensors" in error for error in result["errors"])
+
+
+def test_check_model_files_reports_missing_indexed_shards(tmp_path: Path):
+    model_dir = tmp_path / "model"
+    write_file(model_dir / "config.json")
+    write_file(model_dir / "tokenizer.json")
+    write_file(model_dir / "tokenizer_config.json")
+    write_file(
+        model_dir / "model.safetensors.index.json",
+        json.dumps(
+            {
+                "weight_map": {
+                    "layer.a": "model-00001-of-00002.safetensors",
+                    "layer.b": "model-00002-of-00002.safetensors",
+                }
+            }
+        ),
+    )
+    write_file(model_dir / "model-00001-of-00002.safetensors")
+
+    result = check_model_files(model_dir)
+
+    assert result["passed"] is False
+    assert "model-00002-of-00002.safetensors" in result["missing_files"]
+    assert any(
+        "model-00002-of-00002.safetensors" in error for error in result["errors"]
+    )
 
 
 def test_render_model_check_report_contains_decision(tmp_path: Path):
