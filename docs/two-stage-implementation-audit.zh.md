@@ -88,7 +88,7 @@
 | Task checks：`git diff --check` | 既有证据：任务检查中无 whitespace errors。 |
 | `rg -n '^(def |class |@dataclass|if __name__|""")' src\small_model_train scripts tests` | Fresh review check: PowerShell-safe definition scan produced module definitions, script entry points, and test definitions for mapped Stage 1/Stage 2 files；矩阵文件均有实现或测试代表。 |
 | `rg -n "chapter_goal|chapter_structure|character_states|hard_gate_pass|failure_types|ai_trace_count|source_text|must_include|must_not_include" docs\stage1-pipeline-guide.zh.md src tests scripts` | Fresh review check: Stage 1 guide examples and implementation/tests both contain the current chapter-card and scoring schema fields。 |
-| `python -m pytest -q` | Fresh fixup checks: repeated full-suite runs passed with `128 passed`；recorded timings included `1.08s` and `1.06s`。 |
+| `python -m pytest -q` | Fresh fixup checks: repeated full-suite runs passed with `128 passed`；recorded pre-commit timings included `1.05s` and `1.04s`。 |
 | `$patterns = @("to" + "do", "tb" + "d", "place" + "holder", "fa" + "ke", "st" + "ub", "not" + "implemented", "pass$"); rg -n -i ($patterns -join "|") docs src scripts` | Fresh check exit code 1, no output；当前审计报告使用中文审查表述，命令里的 English red-flag patterns 以字符串拼接方式避免自命中，未发现 live `src`/`scripts` 命中。 |
-| `git diff --check` | Fresh fixup check exit code 0；仅输出 Windows 工作区提示 `LF will be replaced by CRLF the next time Git touches it`，未发现 whitespace errors。 |
-| `git status --short --branch` | Task 5 原提交前证据：only `?? docs/two-stage-implementation-audit.zh.md`；Task 5 原提交后证据：`## codex/two-stage-audit-docs`，工作区 clean。本次 fixup pre-commit fresh check: `## codex/two-stage-audit-docs` plus only ` M docs/two-stage-implementation-audit.zh.md`。 |
+| `git diff --check main HEAD` | Final branch-range whitespace verification after spec trailing-space fix: exit code 0, no output。 |
+| `git status --short --branch` | Task 5 原提交前证据：only `?? docs/two-stage-implementation-audit.zh.md`；Task 5 原提交后证据：`## codex/two-stage-audit-docs`，工作区 clean。本次最终提交前仅有本报告和规格文档的预期改动；提交后复核 clean。 |
