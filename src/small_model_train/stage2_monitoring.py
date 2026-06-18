@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +79,7 @@ HIGH_SPECIFICITY_ERROR_TYPES = (
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def append_event(

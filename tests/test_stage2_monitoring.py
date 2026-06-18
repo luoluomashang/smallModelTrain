@@ -1,6 +1,8 @@
 import json
+import re
 from pathlib import Path
 
+from small_model_train import stage2_monitoring
 from small_model_train.stage2_monitoring import (
     append_event,
     classify_training_error,
@@ -19,6 +21,39 @@ EXPECTED_SUGGESTIONS = {
     "llamafactory_error": "检查 LLaMA-Factory 命令和参数",
     "adapter_save_error": "检查 output_dir 权限和磁盘空间",
 }
+
+
+def test_now_iso_uses_local_timezone_offset(monkeypatch):
+    class FakeLocalDateTime:
+        def isoformat(self, timespec="auto"):
+            assert timespec == "seconds"
+            return "2026-01-02T11:04:05+08:00"
+
+    class FakeNowDateTime:
+        def __init__(self, tz):
+            self.tz = tz
+
+        def astimezone(self):
+            assert self.tz is None
+            return FakeLocalDateTime()
+
+        def isoformat(self, timespec="auto"):
+            assert timespec == "seconds"
+            return "2026-01-02T03:04:05+00:00"
+
+    class FakeDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            return FakeNowDateTime(tz)
+
+    monkeypatch.setattr(stage2_monitoring, "datetime", FakeDateTime)
+
+    timestamp = stage2_monitoring.now_iso()
+
+    iso_with_offset = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}"
+    assert re.fullmatch(iso_with_offset, timestamp)
+    assert timestamp.endswith("+08:00")
+    assert not timestamp.endswith("+00:00")
 
 
 def test_append_event_writes_jsonl(tmp_path: Path):
