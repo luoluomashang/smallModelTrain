@@ -148,6 +148,20 @@ def test_classify_training_error_returns_none_for_clean_exit_without_stderr():
     }
 
 
+def test_classify_training_error_ignores_successful_stderr_markers():
+    cases = [
+        "Loading dataset train split",
+        "Loading tokenizer files",
+        "bitsandbytes warning",
+    ]
+
+    for stderr in cases:
+        assert classify_training_error(stderr, 0) == {
+            "error_type": "none",
+            "suggestion": "无",
+        }
+
+
 def test_classify_training_error_returns_plan_suggestions_exactly():
     cases = [
         ("RuntimeError: CUDA out of memory", "cuda_oom"),

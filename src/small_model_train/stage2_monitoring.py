@@ -104,6 +104,9 @@ def append_event(
 
 
 def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str]:
+    if exit_code == 0:
+        return {"error_type": "none", "suggestion": "无"}
+
     lowered_stderr = stderr.lower()
 
     specific_error = _match_error_rule(lowered_stderr, HIGH_SPECIFICITY_ERROR_TYPES)
