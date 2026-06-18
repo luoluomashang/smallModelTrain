@@ -8,6 +8,8 @@ import subprocess
 from importlib import metadata
 from typing import Any
 
+REQUIRED_PACKAGES = ("torch", "transformers", "bitsandbytes", "peft")
+
 
 def import_version(package: str) -> str:
     try:
@@ -56,7 +58,25 @@ def query_nvidia_smi_memory() -> dict[str, int | str]:
     except (FileNotFoundError, OSError, subprocess.SubprocessError):
         return _empty_gpu()
 
-    return parse_nvidia_smi_memory(result.stdout)
+    return select_gpu_with_most_free_memory(result.stdout)
+
+
+def parse_nvidia_smi_memory_rows(text: str) -> list[dict[str, int | str]]:
+    gpus = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        gpu = parse_nvidia_smi_memory(line)
+        if gpu["gpu_name"]:
+            gpus.append(gpu)
+    return gpus
+
+
+def select_gpu_with_most_free_memory(text: str) -> dict[str, int | str]:
+    gpus = parse_nvidia_smi_memory_rows(text)
+    if not gpus:
+        return _empty_gpu()
+    return max(gpus, key=lambda gpu: int(gpu["free_mb"]))
 
 
 def vram_recommendation(free_mb: int) -> dict[str, Any]:
@@ -81,13 +101,10 @@ def vram_recommendation(free_mb: int) -> dict[str, Any]:
 
 def collect_training_env() -> dict[str, Any]:
     gpu = query_nvidia_smi_memory()
-    return {
+    snapshot = {
         "python": platform.python_version(),
         "imports": {
-            "torch": import_version("torch"),
-            "transformers": import_version("transformers"),
-            "bitsandbytes": import_version("bitsandbytes"),
-            "peft": import_version("peft"),
+            package: import_version(package) for package in REQUIRED_PACKAGES
         },
         "cuda_available": _cuda_available(),
         "gpu": gpu,
@@ -99,6 +116,30 @@ def collect_training_env() -> dict[str, Any]:
         },
         "recommendation": vram_recommendation(int(gpu["free_mb"])),
     }
+    return apply_environment_gates(snapshot)
+
+
+def apply_environment_gates(snapshot: dict[str, Any]) -> dict[str, Any]:
+    blocking_reasons = []
+    if not snapshot.get("cuda_available", False):
+        blocking_reasons.append("CUDA is not available")
+
+    imports = snapshot.get("imports", {})
+    for package in REQUIRED_PACKAGES:
+        if imports.get(package) == "missing":
+            blocking_reasons.append(f"{package} is missing")
+
+    if snapshot.get("llamafactory") == "missing":
+        blocking_reasons.append("LLaMA-Factory CLI is missing")
+
+    recommendation = snapshot.setdefault("recommendation", {})
+    if blocking_reasons:
+        recommendation["allow_training"] = False
+        recommendation["blocking_reasons"] = blocking_reasons
+    else:
+        recommendation.pop("blocking_reasons", None)
+
+    return snapshot
 
 
 def render_env_report(snapshot: dict[str, Any]) -> str:
@@ -124,6 +165,12 @@ def render_env_report(snapshot: dict[str, Any]) -> str:
     lines.extend(["", "## Environment Variables"])
     for name, value in snapshot.get("env", {}).items():
         lines.append(f"- {name}: {value}")
+
+    blocking_reasons = recommendation.get("blocking_reasons", [])
+    if blocking_reasons:
+        lines.extend(["", "## Blocking Reasons"])
+        for reason in blocking_reasons:
+            lines.append(f"- {reason}")
 
     lines.extend(
         [
