@@ -180,6 +180,39 @@ def test_parse_gpu_process_samples_reads_nvidia_smi_csv():
     ]
 
 
+def test_collect_gpu_processes_runs_nvidia_smi_and_parses_stdout(monkeypatch):
+    calls = []
+
+    class CompletedProcess:
+        stdout = "1234, python.exe, 11800\n"
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return CompletedProcess()
+
+    monkeypatch.setattr(stage2_monitoring.subprocess, "run", fake_run)
+
+    samples = stage2_monitoring.collect_gpu_processes()
+
+    assert samples == [{"pid": 1234, "name": "python.exe", "used_mb": 11800}]
+    command, kwargs = calls[0]
+    assert "--query-compute-apps=pid,process_name,used_memory" in command
+    assert "--format=csv,noheader,nounits" in command
+    assert kwargs["capture_output"] is True
+    assert kwargs["check"] is True
+    assert kwargs["text"] is True
+    assert kwargs["timeout"] == 10
+
+
+def test_collect_gpu_processes_returns_empty_when_nvidia_smi_is_missing(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(stage2_monitoring.subprocess, "run", fake_run)
+
+    assert stage2_monitoring.collect_gpu_processes() == []
+
+
 def test_render_failure_summary_contains_last_phase_and_gpu_sample():
     summary = render_failure_summary(
         error={"error_type": "cuda_oom", "suggestion": "降低 cutoff_len"},
