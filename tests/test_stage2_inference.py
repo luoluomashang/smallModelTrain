@@ -68,6 +68,16 @@ def test_build_generation_row_uses_fixed_schema():
     }
 
 
+def test_build_generation_row_copies_params():
+    params = {"temperature": 0.7}
+
+    row = build_generation_row("eval-1", "正文", "sft_v1", params)
+    params["temperature"] = 0.1
+
+    assert row["params"] == {"temperature": 0.7}
+    assert row["params"] is not params
+
+
 def test_default_inference_params_match_stage2_eval_defaults():
     assert default_inference_params() == {
         "max_new_tokens": 5120,
@@ -116,6 +126,129 @@ def test_dry_run_cli_writes_generation_rows_without_subprocess(
     assert set(rows[0]) == {"id", "output", "model", "params"}
 
 
+def test_dry_run_cli_fails_for_missing_cards_without_subprocess(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    from scripts import run_eval_inference
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("invalid dry-run inputs must not call subprocess.run")
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "run", fail_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_eval_inference.main(
+            [
+                "--cards",
+                str(tmp_path / "missing.jsonl"),
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--dry-run",
+            ]
+        )
+
+    assert exc_info.value.code == 1
+    assert "cards file is missing" in capsys.readouterr().err
+
+
+def test_dry_run_cli_fails_for_empty_cards_without_subprocess(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    from scripts import run_eval_inference
+
+    cards_path = tmp_path / "empty.jsonl"
+    cards_path.write_text("\n", encoding="utf-8")
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("invalid dry-run inputs must not call subprocess.run")
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "run", fail_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_eval_inference.main(
+            [
+                "--cards",
+                str(cards_path),
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--dry-run",
+            ]
+        )
+
+    assert exc_info.value.code == 1
+    assert "cards file has no rows" in capsys.readouterr().err
+
+
+def test_worker_card_loader_fails_before_gpu_imports_for_missing_or_empty_cards(
+    tmp_path: Path,
+):
+    from scripts.stage2_eval_worker import load_eval_cards
+
+    missing = tmp_path / "missing.jsonl"
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="cards file is missing"):
+        load_eval_cards(missing)
+    with pytest.raises(ValueError, match="cards file has no rows"):
+        load_eval_cards(empty)
+
+
+def test_non_dry_run_success_writes_and_echoes_stdout(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    from scripts import run_eval_inference
+
+    event_log = tmp_path / "events.jsonl"
+    stderr_log = tmp_path / "stderr.log"
+    stdout_log = tmp_path / "stdout.log"
+
+    completed = subprocess.CompletedProcess(
+        args=["python", "worker"],
+        returncode=0,
+        stdout="wrote 2 generations to output\n",
+        stderr="",
+    )
+
+    monkeypatch.setattr(
+        run_eval_inference.subprocess,
+        "run",
+        lambda *args, **kwargs: completed,
+    )
+
+    exit_code = run_eval_inference.main(
+        [
+            "--cards",
+            str(tmp_path / "cards.jsonl"),
+            "--model-dir",
+            "model",
+            "--adapter-dir",
+            "adapter",
+            "--output",
+            str(tmp_path / "generated.jsonl"),
+            "--event-log",
+            str(event_log),
+            "--stderr-log",
+            str(stderr_log),
+            "--stdout-log",
+            str(stdout_log),
+        ]
+    )
+
+    assert exit_code == 0
+    assert stdout_log.read_text(encoding="utf-8") == "wrote 2 generations to output\n"
+    assert stderr_log.read_text(encoding="utf-8") == ""
+    assert "wrote 2 generations to output" in capsys.readouterr().out
+    events = _read_jsonl(event_log)
+    assert [event["status"] for event in events] == ["start", "ok"]
+
+
 def test_non_dry_run_failure_writes_logs_events_and_classification(
     tmp_path: Path,
     monkeypatch,
@@ -126,12 +259,13 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
     output_path = tmp_path / "generated.jsonl"
     event_log = tmp_path / "events.jsonl"
     stderr_log = tmp_path / "stderr.log"
+    stdout_log = tmp_path / "stdout.log"
     seen_commands = []
 
     completed = subprocess.CompletedProcess(
         args=["python", "worker"],
         returncode=23,
-        stdout="",
+        stdout="loaded tokenizer before failure\n",
         stderr="RuntimeError: CUDA out of memory",
     )
 
@@ -156,15 +290,18 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
                 str(event_log),
                 "--stderr-log",
                 str(stderr_log),
+                "--stdout-log",
+                str(stdout_log),
             ]
         )
 
+    worker_path = str(run_eval_inference.REPO_ROOT / "scripts" / "stage2_eval_worker.py")
     assert exc_info.value.code == 23
     assert seen_commands == [
         (
             [
                 run_eval_inference.sys.executable,
-                "scripts/stage2_eval_worker.py",
+                worker_path,
                 "--cards",
                 str(tmp_path / "cards.jsonl"),
                 "--model-dir",
@@ -180,11 +317,14 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
         )
     ]
     assert stderr_log.read_text(encoding="utf-8") == "RuntimeError: CUDA out of memory"
+    assert stdout_log.read_text(encoding="utf-8") == "loaded tokenizer before failure\n"
     events = _read_jsonl(event_log)
     assert [event["status"] for event in events] == ["start", "failed"]
     assert events[0]["detail"]["command"] == seen_commands[0][0]
     assert events[-1]["detail"]["exit_code"] == 23
-    assert "cuda_oom" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "loaded tokenizer before failure" in captured.out
+    assert "cuda_oom" in captured.err
 
 
 def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
@@ -196,6 +336,7 @@ def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
 
     event_log = tmp_path / "events.jsonl"
     stderr_log = tmp_path / "stderr.log"
+    stdout_log = tmp_path / "stdout.log"
 
     def fake_run(command, **kwargs):
         raise OSError("launcher unavailable")
@@ -217,11 +358,14 @@ def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
                 str(event_log),
                 "--stderr-log",
                 str(stderr_log),
+                "--stdout-log",
+                str(stdout_log),
             ]
         )
 
     assert exc_info.value.code == 127
     assert "OSError: launcher unavailable" in stderr_log.read_text(encoding="utf-8")
+    assert stdout_log.read_text(encoding="utf-8") == ""
     events = _read_jsonl(event_log)
     assert [event["status"] for event in events] == ["start", "failed"]
     assert events[-1]["detail"]["exit_code"] == 127

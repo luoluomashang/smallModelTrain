@@ -9,10 +9,11 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from small_model_train.io_utils import read_jsonl, write_jsonl
+from small_model_train.io_utils import write_jsonl
 from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
+    load_eval_cards,
     render_eval_prompt,
 )
 
@@ -25,6 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--model-name", default="sft_v1")
     args = parser.parse_args(argv)
+
+    try:
+        cards = load_eval_cards(args.cards)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -49,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     model.eval()
 
     rows = []
-    for card in read_jsonl(args.cards):
+    for card in cards:
         prompt = render_eval_prompt(card)
         inputs = tokenizer(prompt, return_tensors="pt")
         device = getattr(model, "device", None)

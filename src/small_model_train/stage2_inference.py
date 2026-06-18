@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from small_model_train.io_utils import read_jsonl
 from small_model_train.sft_builder import render_sft_input
 
 
@@ -29,5 +31,17 @@ def build_generation_row(
         "id": sample_id,
         "output": output,
         "model": model,
-        "params": params,
+        "params": dict(params),
     }
+
+
+def load_eval_cards(path: str | Path) -> list[dict]:
+    cards_path = Path(path)
+    if not cards_path.exists():
+        raise ValueError(f"cards file is missing: {cards_path}")
+
+    rows = read_jsonl(cards_path)
+    if not rows:
+        raise ValueError(f"cards file has no rows: {cards_path}")
+
+    return rows

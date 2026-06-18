@@ -10,10 +10,11 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from small_model_train.io_utils import read_jsonl, write_jsonl
+from small_model_train.io_utils import write_jsonl
 from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
+    load_eval_cards,
     render_eval_prompt,
 )
 from small_model_train.stage2_monitoring import (
@@ -40,11 +41,19 @@ def main(argv: list[str] | None = None) -> int:
         "--stderr-log",
         default="logs/training/sft_v1_eval_stderr.log",
     )
+    parser.add_argument(
+        "--stdout-log",
+        default="logs/training/sft_v1_eval_stdout.log",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
     if args.dry_run:
-        _run_dry(args.cards, args.output, args.model_name)
+        try:
+            _run_dry(args.cards, args.output, args.model_name)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(1) from exc
         return 0
 
     command = _build_worker_command(args)
@@ -58,12 +67,17 @@ def main(argv: list[str] | None = None) -> int:
             text=True,
         )
         returncode = int(result.returncode)
+        stdout = result.stdout or ""
         stderr = result.stderr or ""
     except (FileNotFoundError, OSError) as exc:
         returncode = 127
+        stdout = ""
         stderr = f"{type(exc).__name__}: {exc}"
 
+    _write_text_log(args.stdout_log, stdout)
     _write_text_log(args.stderr_log, stderr)
+    if stdout:
+        print(stdout, end="" if stdout.endswith("\n") else "\n")
 
     if returncode == 0:
         append_event(args.event_log, PHASE, "ok", {"exit_code": returncode})
@@ -83,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
 def _run_dry(cards_path: str | Path, output_path: str | Path, model_name: str) -> None:
     params = default_inference_params()
     rows = []
-    for card in read_jsonl(cards_path):
+    for card in load_eval_cards(cards_path):
         sample_id = str(card.get("id", ""))
         output = "[DRY RUN] " + render_eval_prompt(card)[:80]
         rows.append(build_generation_row(sample_id, output, model_name, params))
@@ -93,7 +107,7 @@ def _run_dry(cards_path: str | Path, output_path: str | Path, model_name: str) -
 def _build_worker_command(args: argparse.Namespace) -> list[str]:
     return [
         sys.executable,
-        "scripts/stage2_eval_worker.py",
+        str(REPO_ROOT / "scripts" / "stage2_eval_worker.py"),
         "--cards",
         str(args.cards),
         "--model-dir",
