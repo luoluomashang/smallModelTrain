@@ -9,6 +9,18 @@ from small_model_train.stage2_monitoring import (
 )
 
 
+EXPECTED_SUGGESTIONS = {
+    "cuda_oom": "降低 cutoff_len，必要时降低 lora_rank",
+    "process_killed": "查看 GPU 采样和系统稳定性，确认是否被系统结束",
+    "driver_reset": "重启训练环境并检查驱动状态",
+    "bnb_load_error": "检查 bitsandbytes、CUDA 和 PyTorch 版本匹配",
+    "tokenizer_error": "检查本地模型目录和 tokenizer 文件",
+    "dataset_error": "检查数据路径和 LLaMA-Factory dataset_info",
+    "llamafactory_error": "检查 LLaMA-Factory 命令和参数",
+    "adapter_save_error": "检查 output_dir 权限和磁盘空间",
+}
+
+
 def test_append_event_writes_jsonl(tmp_path: Path):
     path = tmp_path / "logs" / "events.jsonl"
 
@@ -39,6 +51,27 @@ def test_classify_training_error_detects_empty_nonzero_exit_as_process_killed():
     assert result["error_type"] == "process_killed"
 
 
+def test_classify_training_error_returns_plan_suggestions_exactly():
+    cases = [
+        ("RuntimeError: CUDA out of memory", "cuda_oom"),
+        ("RuntimeError: killed", "process_killed"),
+        ("RuntimeError: device lost", "driver_reset"),
+        ("ImportError: bitsandbytes 4-bit", "bnb_load_error"),
+        ("AutoTokenizer failed", "tokenizer_error"),
+        ("FileNotFoundError: dataset_info.json", "dataset_error"),
+        ("llamafactory-cli: unrecognized arguments", "llamafactory_error"),
+        ("Permission denied during save_pretrained adapter_model", "adapter_save_error"),
+    ]
+
+    for stderr, error_type in cases:
+        result = classify_training_error(stderr, 1)
+
+        assert result == {
+            "error_type": error_type,
+            "suggestion": EXPECTED_SUGGESTIONS[error_type],
+        }
+
+
 def test_parse_gpu_process_samples_reads_nvidia_smi_csv():
     text = "1234, python.exe, 11800\n5678, chrome.exe, 600\n"
 
@@ -59,6 +92,13 @@ def test_render_failure_summary_contains_last_phase_and_gpu_sample():
         stderr_tail="CUDA out of memory",
     )
 
+    assert "# Training Failure Summary" in summary
+    assert "1" in summary
     assert "first_backward" in summary
     assert "cuda_oom" in summary
+    assert "降低 cutoff_len" in summary
+    assert "## Last Events" in summary
+    assert "## Last GPU Samples" in summary
+    assert "15872" in summary
+    assert "```text" in summary
     assert "CUDA out of memory" in summary

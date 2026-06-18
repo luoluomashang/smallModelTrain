@@ -11,42 +11,42 @@ ERROR_RULES = (
     {
         "error_type": "cuda_oom",
         "markers": ("cuda out of memory", "cublas_status_alloc_failed"),
-        "suggestion": "降低 cutoff_len 或 LoRA rank，并减少 batch size 后重试。",
+        "suggestion": "降低 cutoff_len，必要时降低 lora_rank",
     },
     {
         "error_type": "process_killed",
         "markers": ("killed", "terminated"),
-        "suggestion": "检查 GPU/系统稳定性、显存占用和系统日志，确认进程是否被外部终止。",
+        "suggestion": "查看 GPU 采样和系统稳定性，确认是否被系统结束",
     },
     {
         "error_type": "driver_reset",
         "markers": ("device lost", "cuda driver", "unknown error"),
-        "suggestion": "检查 CUDA 驱动状态，重启训练环境后再运行。",
+        "suggestion": "重启训练环境并检查驱动状态",
     },
     {
         "error_type": "bnb_load_error",
         "markers": ("bitsandbytes", "4-bit", "4bit"),
-        "suggestion": "检查 bitsandbytes、CUDA 和 4-bit 量化依赖是否匹配。",
+        "suggestion": "检查 bitsandbytes、CUDA 和 PyTorch 版本匹配",
     },
     {
         "error_type": "tokenizer_error",
         "markers": ("tokenizer", "autotokenizer", "autoconfig"),
-        "suggestion": "检查本地模型 tokenizer/config 文件是否完整并可被 Transformers 加载。",
+        "suggestion": "检查本地模型目录和 tokenizer 文件",
     },
     {
         "error_type": "dataset_error",
         "markers": ("dataset_info", "filenotfounderror", "jsondecodeerror", "dataset"),
-        "suggestion": "检查数据集路径、dataset_info.json 和 JSONL 格式是否正确。",
+        "suggestion": "检查数据路径和 LLaMA-Factory dataset_info",
     },
     {
         "error_type": "llamafactory_error",
         "markers": ("llamafactory", "unrecognized arguments", "invalid choice"),
-        "suggestion": "检查 LLaMA-Factory CLI 版本和训练参数是否匹配。",
+        "suggestion": "检查 LLaMA-Factory 命令和参数",
     },
     {
         "error_type": "adapter_save_error",
         "markers": ("adapter_model", "save_pretrained", "permission denied"),
-        "suggestion": "检查 LoRA adapter 保存目录、磁盘空间和写入权限。",
+        "suggestion": "检查 output_dir 权限和磁盘空间",
     },
 )
 
