@@ -1,3 +1,9 @@
+"""评测 Markdown 报告生成。
+
+报告是第一阶段闭环的“看板”：把规则评分、可选 100 分制评分、数据/推理
+配置快照和偏好候选集中到一个 Markdown 文件里，方便决定是否进入下一阶段。
+"""
+
 from __future__ import annotations
 
 import json
@@ -6,16 +12,22 @@ from statistics import mean
 
 
 def _is_number(value: object) -> bool:
+    """排除 bool 的数字判断，因为 bool 在 Python 中也是 int 子类。"""
+
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _format_number(value: float) -> str:
+    """给报告用的紧凑数字格式，避免 80.00 这类噪声。"""
+
     if value == int(value):
         return str(int(value))
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
 def summarize_scores(scores: list[dict]) -> dict:
+    """汇总样本数、硬门槛通过率、失败类型和可选 100 分制均分。"""
+
     sample_count = len(scores)
     hard_gate_passes = sum(1 for score in scores if score.get("hard_gate_pass"))
     failure_counts = Counter(
@@ -57,6 +69,8 @@ def build_markdown_report(
     scores: list[dict],
     config_snapshot: dict | None = None,
 ) -> str:
+    """生成面向人工复盘的 Markdown 评测报告。"""
+
     config_snapshot = config_snapshot or {}
     summary = summarize_scores(scores)
     worst = sorted(
@@ -71,6 +85,7 @@ def build_markdown_report(
             str(score.get("id", "")),
         ),
     )[:20]
+    # config_snapshot 原样输出，确保报告能追溯当次数据版本和推理参数。
     lines = [
         f"# {title}",
         "",

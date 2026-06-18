@@ -1,3 +1,9 @@
+"""作者风格画像与风格契约生成。
+
+风格画像把正文集合压缩成少量可解释统计；风格契约再把这些统计转成给模型
+看的写作约束。第一阶段先做“能稳定跑”的模板，后续可继续增加更细指标。
+"""
+
 from __future__ import annotations
 
 from statistics import mean
@@ -10,6 +16,8 @@ from small_model_train.text_utils import (
 
 
 def build_style_profile(rows: list[dict]) -> dict:
+    """从章节正文中提取平均字数、段落长度和对白比例。"""
+
     texts = [row.get("text", "") for row in rows if row.get("text")]
     paragraph_counts = [length for text in texts for length in paragraph_lengths(text)]
     return {
@@ -25,6 +33,8 @@ def build_style_profile(rows: list[dict]) -> dict:
 
 
 def render_style_contract(profile: dict) -> str:
+    """把风格统计渲染成可直接放进章节卡的中文契约。"""
+
     dialogue_percent = round(float(profile.get("avg_dialogue_ratio", 0)) * 100, 1)
     avg_paragraph_chars = profile.get("avg_paragraph_chars", 0)
     return "\n".join(
