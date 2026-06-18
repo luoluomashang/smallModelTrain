@@ -50,6 +50,26 @@ ERROR_RULES = (
     },
 )
 
+DATASET_CONTEXT_MARKERS = (
+    "dataset_info",
+    "filenotfounderror",
+    "jsondecodeerror",
+    "dataset",
+    "data_sft",
+    "data/",
+    "data\\",
+    ".jsonl",
+    "input/",
+    "input\\",
+)
+
+ADAPTER_SAVE_CONTEXT_MARKERS = (
+    "adapter",
+    "output_dir",
+    "save_pretrained",
+    "adapter_model",
+)
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -78,6 +98,16 @@ def append_event(
 
 def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str]:
     lowered_stderr = stderr.lower()
+    if _contains_any(lowered_stderr, DATASET_CONTEXT_MARKERS):
+        return _error_result("dataset_error")
+
+    if "permission denied" in lowered_stderr:
+        if _contains_any(lowered_stderr, ADAPTER_SAVE_CONTEXT_MARKERS):
+            return _error_result("adapter_save_error")
+        if exit_code not in (0, None):
+            return _error_result("process_killed")
+        return {"error_type": "none", "suggestion": "无"}
+
     for rule in ERROR_RULES:
         if any(marker in lowered_stderr for marker in rule["markers"]):
             return {
@@ -164,6 +194,10 @@ def _error_result(error_type: str) -> dict[str, str]:
                 "suggestion": str(rule["suggestion"]),
             }
     return {"error_type": error_type, "suggestion": ""}
+
+
+def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in markers)
 
 
 def _render_dict_rows(rows: list[dict[str, Any]]) -> list[str]:

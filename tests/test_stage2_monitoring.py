@@ -45,6 +45,24 @@ def test_classify_training_error_detects_dataset_error():
     assert result["error_type"] == "dataset_error"
 
 
+def test_classify_training_error_prefers_dataset_context_over_unknown_error():
+    result = classify_training_error(
+        "RuntimeError: unknown error while loading dataset_info.json",
+        1,
+    )
+
+    assert result["error_type"] == "dataset_error"
+
+
+def test_classify_training_error_treats_data_permission_denied_as_dataset_error():
+    result = classify_training_error(
+        "Permission denied: data_sft/sft_chapter_v1.jsonl",
+        1,
+    )
+
+    assert result["error_type"] == "dataset_error"
+
+
 def test_classify_training_error_detects_empty_nonzero_exit_as_process_killed():
     result = classify_training_error("", 1)
 
