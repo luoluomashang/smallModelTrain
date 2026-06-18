@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from small_model_train.stage2_config import (
 from small_model_train.stage2_monitoring import (
     append_event,
     classify_training_error,
+    collect_gpu_processes,
+    now_iso,
 )
 
 SMOKE_OVERRIDES = {
@@ -67,6 +70,7 @@ def build_train_run(
         "event_log": str(log_path / f"{name}_events.jsonl"),
         "gpu_log": str(log_path / f"{name}_gpu.jsonl"),
         "stderr_log": str(log_path / f"{name}_stderr.log"),
+        "stdout_log": str(log_path / f"{name}_stdout.log"),
     }
 
 
@@ -100,36 +104,76 @@ def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
         "start",
         {"run": run["name"], "command": command_text},
     )
-    result = subprocess.run(
-        run["command"],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    stderr = result.stderr or ""
-    stderr_log = Path(run["stderr_log"])
-    stderr_log.parent.mkdir(parents=True, exist_ok=True)
-    stderr_log.write_text(stderr, encoding="utf-8")
+    _append_gpu_sample(run, "before_subprocess")
+    stdout = ""
+    try:
+        result = subprocess.run(
+            run["command"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        exit_code = result.returncode
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
+    except (FileNotFoundError, OSError) as exc:
+        exit_code = 127
+        stderr = f"{type(exc).__name__}: {exc}"
+    finally:
+        _append_gpu_sample(run, "after_subprocess")
 
-    error = classify_training_error(stderr, result.returncode)
-    status = "ok" if result.returncode == 0 else "failed"
+    _write_text_log(run.get("stdout_log"), stdout)
+    _write_text_log(run["stderr_log"], stderr)
+
+    error = classify_training_error(stderr, exit_code)
+    status = "ok" if exit_code == 0 else "failed"
     append_event(
         run["event_log"],
         "launch_train_subprocess",
         status,
         {
             "run": run["name"],
-            "exit_code": result.returncode,
+            "exit_code": exit_code,
             "error": error,
         },
     )
 
     return {
-        "exit_code": result.returncode,
+        "exit_code": exit_code,
         "command_text": command_text,
         "error": error,
     }
 
 
 def _command_text(command: list[str]) -> str:
-    return " ".join(str(part) for part in command)
+    return subprocess.list2cmdline([str(part) for part in command])
+
+
+def _write_text_log(path: str | Path | None, text: str) -> None:
+    if path is None:
+        return
+
+    log_path = Path(path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(text, encoding="utf-8")
+
+
+def _append_gpu_sample(run: dict[str, Any], phase: str) -> None:
+    gpu_log = run.get("gpu_log")
+    if not gpu_log:
+        return
+
+    try:
+        processes = collect_gpu_processes()
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        processes = []
+
+    row = {
+        "time": now_iso(),
+        "phase": phase,
+        "processes": processes,
+    }
+    gpu_path = Path(gpu_log)
+    gpu_path.parent.mkdir(parents=True, exist_ok=True)
+    with gpu_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
