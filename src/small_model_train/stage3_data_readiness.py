@@ -32,16 +32,39 @@ def _count_raw_text_files(raw_dir: str | Path) -> int:
     return sum(1 for path in root.rglob("*") if path.is_file() and path.suffix.lower() in {".txt", ".md"})
 
 
+def _validate_card_schema(card: dict) -> list[str]:
+    errors = []
+    card_id = _card_id(card)
+
+    for field in ("chapter_structure", "character_states"):
+        value = card.get(field)
+        if field not in card:
+            continue
+        if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+            errors.append(f"{card_id}: {field} must be a list of dictionaries")
+
+    for field in ("must_include", "must_not_include"):
+        value = card.get(field)
+        if field not in card:
+            continue
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            errors.append(f"{card_id}: {field} must be a list of strings")
+
+    return errors
+
+
 def inspect_chapter_cards(cards: list[dict]) -> dict:
     missing_required_fields = []
     source_leakage_errors = []
     render_errors = []
+    schema_errors = []
     cards_with_empty_lists = []
 
     for card in cards:
         missing_fields = [field for field in REQUIRED_CARD_FIELDS if field not in card]
         if missing_fields:
             missing_required_fields.append({"id": _card_id(card), "missing_fields": missing_fields})
+        schema_errors.extend(_validate_card_schema(card))
 
         for field in ("must_include", "must_not_include"):
             if field in card and card[field] == []:
@@ -58,6 +81,7 @@ def inspect_chapter_cards(cards: list[dict]) -> dict:
         "missing_required_fields": missing_required_fields,
         "source_leakage_errors": source_leakage_errors,
         "render_errors": render_errors,
+        "schema_errors": schema_errors,
         "cards_with_empty_lists": cards_with_empty_lists,
     }
 
@@ -96,7 +120,12 @@ def decide_stage3_status(
         return "blocked_missing_raw_text"
     if split_count == 0 or train_count == 0 or (0 < sft_count < min_trainable_sft):
         return "blocked_insufficient_chapters"
-    if card_count == 0 or card_issues.get("missing_required_fields") or card_issues.get("render_errors"):
+    if (
+        card_count == 0
+        or card_issues.get("missing_required_fields")
+        or card_issues.get("render_errors")
+        or card_issues.get("schema_errors")
+    ):
         return "blocked_missing_chapter_cards"
     if card_issues.get("source_leakage_errors"):
         return "blocked_source_leakage"
@@ -140,6 +169,8 @@ def _build_blockers(
         blockers.append("chapter cards are missing required fields")
     if card_issues.get("render_errors"):
         blockers.append("chapter cards have malformed fields that cannot render SFT inputs")
+    if card_issues.get("schema_errors"):
+        blockers.append("chapter cards have malformed schema fields")
     if card_issues.get("source_leakage_errors"):
         blockers.append("chapter cards contain source_text leakage in rendered SFT inputs")
     if sft_row_count == 0:
@@ -306,6 +337,7 @@ def render_stage3_readiness_report(summary: dict) -> str:
             f"- missing_required_fields：{summary['card_issues'].get('missing_required_fields', [])}",
             f"- source_leakage_errors：{summary['card_issues'].get('source_leakage_errors', [])}",
             f"- render_errors：{summary['card_issues'].get('render_errors', [])}",
+            f"- schema_errors：{summary['card_issues'].get('schema_errors', [])}",
             f"- cards_with_empty_lists：{summary['card_issues'].get('cards_with_empty_lists', [])}",
             "",
             "## Smoke Dry-Run",
