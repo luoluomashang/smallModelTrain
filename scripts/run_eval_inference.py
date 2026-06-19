@@ -69,8 +69,6 @@ def main(argv: list[str] | None = None) -> int:
 
     _write_text_log(args.stdout_log, stdout)
     _write_text_log(args.stderr_log, stderr)
-    if stdout:
-        print(stdout, end="" if stdout.endswith("\n") else "\n")
 
     if returncode == 0:
         append_event(args.event_log, PHASE, "ok", {"exit_code": returncode})

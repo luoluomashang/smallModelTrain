@@ -323,8 +323,8 @@ def test_non_dry_run_success_writes_and_echoes_stdout(
     }
     assert "capture_output" not in seen_commands[0][1]
     captured = capsys.readouterr()
-    assert "generated 1/2 eval-1" in captured.out
-    assert "wrote 2 generations to output" in captured.out
+    assert captured.out.count("generated 1/2 eval-1\n") == 1
+    assert captured.out.count("wrote 2 generations to output\n") == 1
     events = _read_jsonl(event_log)
     assert [event["status"] for event in events] == ["start", "ok"]
 
@@ -407,7 +407,7 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
     assert events[0]["detail"]["command"] == seen_commands[0][0]
     assert events[-1]["detail"]["exit_code"] == 23
     captured = capsys.readouterr()
-    assert "loaded tokenizer before failure" in captured.out
+    assert captured.out.count("loaded tokenizer before failure\n") == 1
     assert "cuda_oom" in captured.err
 
 
