@@ -50,6 +50,35 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+class _FakeWorkerProcess:
+    def __init__(
+        self,
+        *,
+        returncode: int,
+        stdout: str,
+        stderr: str,
+    ) -> None:
+        self.returncode = returncode
+        self.stdout = stdout.splitlines(keepends=True)
+        self.stderr = _FakePipe(stderr)
+        self.wait_called = False
+
+    def wait(self) -> int:
+        self.wait_called = True
+        return self.returncode
+
+
+class _FakePipe:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def read(self) -> str:
+        return self.text
+
+    def close(self) -> None:
+        pass
+
+
 def test_render_eval_prompt_contains_card_fields():
     prompt = render_eval_prompt(_card())
 
@@ -248,18 +277,18 @@ def test_non_dry_run_success_writes_and_echoes_stdout(
     stderr_log = tmp_path / "stderr.log"
     stdout_log = tmp_path / "stdout.log"
 
-    completed = subprocess.CompletedProcess(
-        args=["python", "worker"],
+    process = _FakeWorkerProcess(
         returncode=0,
-        stdout="wrote 2 generations to output\n",
+        stdout="generated 1/2 eval-1\nwrote 2 generations to output\n",
         stderr="",
     )
+    seen_commands = []
 
-    monkeypatch.setattr(
-        run_eval_inference.subprocess,
-        "run",
-        lambda *args, **kwargs: completed,
-    )
+    def fake_popen(command, **kwargs):
+        seen_commands.append((command, kwargs))
+        return process
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "Popen", fake_popen)
 
     exit_code = run_eval_inference.main(
         [
@@ -281,9 +310,21 @@ def test_non_dry_run_success_writes_and_echoes_stdout(
     )
 
     assert exit_code == 0
-    assert stdout_log.read_text(encoding="utf-8") == "wrote 2 generations to output\n"
+    assert stdout_log.read_text(encoding="utf-8") == (
+        "generated 1/2 eval-1\nwrote 2 generations to output\n"
+    )
     assert stderr_log.read_text(encoding="utf-8") == ""
-    assert "wrote 2 generations to output" in capsys.readouterr().out
+    assert process.wait_called
+    assert seen_commands[0][1] == {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "bufsize": 1,
+    }
+    assert "capture_output" not in seen_commands[0][1]
+    captured = capsys.readouterr()
+    assert "generated 1/2 eval-1" in captured.out
+    assert "wrote 2 generations to output" in captured.out
     events = _read_jsonl(event_log)
     assert [event["status"] for event in events] == ["start", "ok"]
 
@@ -301,18 +342,17 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
     stdout_log = tmp_path / "stdout.log"
     seen_commands = []
 
-    completed = subprocess.CompletedProcess(
-        args=["python", "worker"],
+    process = _FakeWorkerProcess(
         returncode=23,
         stdout="loaded tokenizer before failure\n",
         stderr="RuntimeError: CUDA out of memory",
     )
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         seen_commands.append((command, kwargs))
-        return completed
+        return process
 
-    monkeypatch.setattr(run_eval_inference.subprocess, "run", fake_run)
+    monkeypatch.setattr(run_eval_inference.subprocess, "Popen", fake_popen)
 
     with pytest.raises(SystemExit) as exc_info:
         run_eval_inference.main(
@@ -352,7 +392,12 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
                 "--model-name",
                 "sft_v1",
             ],
-            {"capture_output": True, "check": False, "text": True},
+            {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "bufsize": 1,
+            },
         )
     ]
     assert stderr_log.read_text(encoding="utf-8") == "RuntimeError: CUDA out of memory"
@@ -373,8 +418,7 @@ def test_non_dry_run_failure_classifies_stdout_only_cuda_oom(
 ):
     from scripts import run_eval_inference
 
-    completed = subprocess.CompletedProcess(
-        args=["python", "worker"],
+    process = _FakeWorkerProcess(
         returncode=23,
         stdout="RuntimeError: CUDA out of memory\n",
         stderr="",
@@ -382,8 +426,8 @@ def test_non_dry_run_failure_classifies_stdout_only_cuda_oom(
 
     monkeypatch.setattr(
         run_eval_inference.subprocess,
-        "run",
-        lambda *args, **kwargs: completed,
+        "Popen",
+        lambda *args, **kwargs: process,
     )
 
     with pytest.raises(SystemExit) as exc_info:
@@ -423,10 +467,10 @@ def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
     stderr_log = tmp_path / "stderr.log"
     stdout_log = tmp_path / "stdout.log"
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         raise OSError("launcher unavailable")
 
-    monkeypatch.setattr(run_eval_inference.subprocess, "run", fake_run)
+    monkeypatch.setattr(run_eval_inference.subprocess, "Popen", fake_popen)
 
     with pytest.raises(SystemExit) as exc_info:
         run_eval_inference.main(

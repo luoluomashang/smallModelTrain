@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -60,15 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     append_event(args.event_log, PHASE, "start", {"command": command})
 
     try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        returncode = int(result.returncode)
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
+        returncode, stdout, stderr = _run_worker_streaming(command)
     except (FileNotFoundError, OSError) as exc:
         returncode = 127
         stdout = ""
@@ -92,6 +85,35 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"{error['error_type']}: {error['suggestion']}", file=sys.stderr)
     raise SystemExit(returncode)
+
+
+def _run_worker_streaming(command: list[str]) -> tuple[int, str, str]:
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+
+    def read_stderr() -> None:
+        if process.stderr is None:
+            return
+        stderr_parts.append(process.stderr.read())
+
+    stderr_thread = threading.Thread(target=read_stderr)
+    stderr_thread.start()
+
+    if process.stdout is not None:
+        for line in process.stdout:
+            stdout_parts.append(line)
+            print(line, end="", flush=True)
+
+    returncode = int(process.wait())
+    stderr_thread.join()
+    return returncode, "".join(stdout_parts), "".join(stderr_parts)
 
 
 def _run_dry(cards_path: str | Path, output_path: str | Path, model_name: str) -> None:
