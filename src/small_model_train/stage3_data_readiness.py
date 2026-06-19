@@ -35,6 +35,7 @@ def _count_raw_text_files(raw_dir: str | Path) -> int:
 def inspect_chapter_cards(cards: list[dict]) -> dict:
     missing_required_fields = []
     source_leakage_errors = []
+    render_errors = []
     cards_with_empty_lists = []
 
     for card in cards:
@@ -50,10 +51,13 @@ def inspect_chapter_cards(cards: list[dict]) -> dict:
             render_sft_input(card)
         except ValueError as exc:
             source_leakage_errors.append(f"{_card_id(card)}: {exc}")
+        except (AttributeError, TypeError) as exc:
+            render_errors.append(f"{_card_id(card)}: {type(exc).__name__}: {exc}")
 
     return {
         "missing_required_fields": missing_required_fields,
         "source_leakage_errors": source_leakage_errors,
+        "render_errors": render_errors,
         "cards_with_empty_lists": cards_with_empty_lists,
     }
 
@@ -92,7 +96,7 @@ def decide_stage3_status(
         return "blocked_missing_raw_text"
     if split_count == 0 or train_count == 0 or (0 < sft_count < min_trainable_sft):
         return "blocked_insufficient_chapters"
-    if card_count == 0 or card_issues.get("missing_required_fields"):
+    if card_count == 0 or card_issues.get("missing_required_fields") or card_issues.get("render_errors"):
         return "blocked_missing_chapter_cards"
     if card_issues.get("source_leakage_errors"):
         return "blocked_source_leakage"
@@ -134,6 +138,8 @@ def _build_blockers(
         blockers.append("chapter cards are missing")
     if card_issues.get("missing_required_fields"):
         blockers.append("chapter cards are missing required fields")
+    if card_issues.get("render_errors"):
+        blockers.append("chapter cards have malformed fields that cannot render SFT inputs")
     if card_issues.get("source_leakage_errors"):
         blockers.append("chapter cards contain source_text leakage in rendered SFT inputs")
     if sft_row_count == 0:
@@ -299,6 +305,7 @@ def render_stage3_readiness_report(summary: dict) -> str:
             "## Card Issues",
             f"- missing_required_fields：{summary['card_issues'].get('missing_required_fields', [])}",
             f"- source_leakage_errors：{summary['card_issues'].get('source_leakage_errors', [])}",
+            f"- render_errors：{summary['card_issues'].get('render_errors', [])}",
             f"- cards_with_empty_lists：{summary['card_issues'].get('cards_with_empty_lists', [])}",
             "",
             "## Smoke Dry-Run",

@@ -168,6 +168,32 @@ def test_source_text_leakage_via_previous_summary_blocks(tmp_path):
     assert any("train_1:" in error for error in summary["card_issues"]["source_leakage_errors"])
 
 
+def test_malformed_card_field_type_blocks_without_raising(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(chapter_cards, [_card("train_1", chapter_structure="not-a-list"), _card("eval_1")])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+    report = render_stage3_readiness_report(summary)
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["card_issues"]["source_leakage_errors"] == []
+    assert len(summary["card_issues"]["render_errors"]) == 1
+    assert "train_1:" in summary["card_issues"]["render_errors"][0]
+    assert "render_errors" in report
+
+
 def test_empty_sft_dataset_blocks_as_sft_empty(tmp_path):
     raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
     write_jsonl(sft_dataset, [])
