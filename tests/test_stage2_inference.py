@@ -1,3 +1,4 @@
+import argparse
 import json
 import subprocess
 import sys
@@ -160,6 +161,62 @@ def test_dry_run_cli_writes_generation_rows_without_subprocess(
     assert set(rows[0]) == {"id", "output", "model", "params"}
 
 
+def test_dry_run_cli_records_max_new_tokens_override(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import run_eval_inference
+
+    cards_path = tmp_path / "cards.jsonl"
+    output_path = tmp_path / "generated.jsonl"
+    write_jsonl(cards_path, [_card("eval-1")])
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("dry-run must not call subprocess.run")
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "run", fail_run)
+
+    exit_code = run_eval_inference.main(
+        [
+            "--cards",
+            str(cards_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+            "--max-new-tokens",
+            "128",
+        ]
+    )
+
+    params = default_inference_params()
+    params["max_new_tokens"] = 128
+    assert exit_code == 0
+    assert _read_jsonl(output_path)[0]["params"] == params
+
+
+def test_dry_run_cli_rejects_non_positive_max_new_tokens(
+    tmp_path: Path,
+    capsys,
+):
+    from scripts import run_eval_inference
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_eval_inference.main(
+            [
+                "--cards",
+                str(tmp_path / "cards.jsonl"),
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--dry-run",
+                "--max-new-tokens",
+                "0",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "must be a positive integer" in capsys.readouterr().err
+
+
 def test_dry_run_cli_fails_for_missing_cards_without_subprocess(
     tmp_path: Path,
     monkeypatch,
@@ -266,6 +323,41 @@ def test_worker_progress_message_includes_count_total_and_id(capsys):
     assert capsys.readouterr().out == "generated 3/50 eval-003\n"
 
 
+def test_worker_inference_params_default_and_override():
+    from scripts.stage2_eval_worker import build_inference_params
+
+    assert build_inference_params(None) == default_inference_params()
+
+    params = build_inference_params(64)
+    expected = default_inference_params()
+    expected["max_new_tokens"] = 64
+    assert params == expected
+    assert default_inference_params()["max_new_tokens"] == 5120
+
+
+def test_worker_cli_rejects_non_positive_max_new_tokens(tmp_path: Path, capsys):
+    from scripts import stage2_eval_worker
+
+    with pytest.raises(SystemExit) as exc_info:
+        stage2_eval_worker.main(
+            [
+                "--cards",
+                str(tmp_path / "cards.jsonl"),
+                "--model-dir",
+                "model",
+                "--adapter-dir",
+                "adapter",
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--max-new-tokens",
+                "0",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "must be a positive integer" in capsys.readouterr().err
+
+
 def test_non_dry_run_success_writes_and_echoes_stdout(
     tmp_path: Path,
     monkeypatch,
@@ -327,6 +419,40 @@ def test_non_dry_run_success_writes_and_echoes_stdout(
     assert captured.out.count("wrote 2 generations to output\n") == 1
     events = _read_jsonl(event_log)
     assert [event["status"] for event in events] == ["start", "ok"]
+
+
+def test_build_worker_command_omits_max_new_tokens_by_default(tmp_path: Path):
+    from scripts import run_eval_inference
+
+    args = argparse.Namespace(
+        cards=tmp_path / "cards.jsonl",
+        model_dir="model",
+        adapter_dir="adapter",
+        output=tmp_path / "generated.jsonl",
+        model_name="sft_v1",
+        max_new_tokens=None,
+    )
+
+    command = run_eval_inference._build_worker_command(args)
+
+    assert "--max-new-tokens" not in command
+
+
+def test_build_worker_command_includes_max_new_tokens_when_supplied(tmp_path: Path):
+    from scripts import run_eval_inference
+
+    args = argparse.Namespace(
+        cards=tmp_path / "cards.jsonl",
+        model_dir="model",
+        adapter_dir="adapter",
+        output=tmp_path / "generated.jsonl",
+        model_name="sft_v1",
+        max_new_tokens=96,
+    )
+
+    command = run_eval_inference._build_worker_command(args)
+
+    assert command[-2:] == ["--max-new-tokens", "96"]
 
 
 def test_non_dry_run_failure_writes_logs_events_and_classification(

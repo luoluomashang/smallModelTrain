@@ -42,6 +42,21 @@ def print_generation_progress(completed: int, total: int, sample_id: str) -> Non
     print(f"generated {completed}/{total} {sample_id}", flush=True)
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def build_inference_params(max_new_tokens: int | None = None) -> dict:
+    params = default_inference_params()
+    if max_new_tokens is not None:
+        params = dict(params)
+        params["max_new_tokens"] = max_new_tokens
+    return params
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", required=True)
@@ -49,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--adapter-dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--model-name", default="sft_v1")
+    parser.add_argument("--max-new-tokens", type=positive_int)
     args = parser.parse_args(argv)
 
     try:
@@ -62,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-    params = default_inference_params()
+    params = build_inference_params(args.max_new_tokens)
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token

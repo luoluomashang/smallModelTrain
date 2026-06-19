@@ -27,6 +27,13 @@ DEFAULT_MODEL_DIR = r"E:\models\Qwen3-4B-Instruct-2507"
 PHASE = "eval_first_generation"
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", default="data_cards/eval_cards_50.jsonl")
@@ -47,11 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         default="logs/training/sft_v1_eval_stdout.log",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--max-new-tokens", type=positive_int)
     args = parser.parse_args(argv)
 
     if args.dry_run:
         try:
-            _run_dry(args.cards, args.output, args.model_name)
+            _run_dry(args.cards, args.output, args.model_name, args.max_new_tokens)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             raise SystemExit(1) from exc
@@ -114,8 +122,16 @@ def _run_worker_streaming(command: list[str]) -> tuple[int, str, str]:
     return returncode, "".join(stdout_parts), "".join(stderr_parts)
 
 
-def _run_dry(cards_path: str | Path, output_path: str | Path, model_name: str) -> None:
+def _run_dry(
+    cards_path: str | Path,
+    output_path: str | Path,
+    model_name: str,
+    max_new_tokens: int | None = None,
+) -> None:
     params = default_inference_params()
+    if max_new_tokens is not None:
+        params = dict(params)
+        params["max_new_tokens"] = max_new_tokens
     rows = []
     for card in load_eval_cards(cards_path):
         sample_id = str(card.get("id", ""))
@@ -125,7 +141,7 @@ def _run_dry(cards_path: str | Path, output_path: str | Path, model_name: str) -
 
 
 def _build_worker_command(args: argparse.Namespace) -> list[str]:
-    return [
+    command = [
         sys.executable,
         str(REPO_ROOT / "scripts" / "stage2_eval_worker.py"),
         "--cards",
@@ -139,6 +155,9 @@ def _build_worker_command(args: argparse.Namespace) -> list[str]:
         "--model-name",
         str(args.model_name),
     ]
+    if args.max_new_tokens is not None:
+        command.extend(["--max-new-tokens", str(args.max_new_tokens)])
+    return command
 
 
 def _write_text_log(path: str | Path, text: str) -> None:
