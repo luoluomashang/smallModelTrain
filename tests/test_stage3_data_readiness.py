@@ -5,7 +5,6 @@ import sys
 
 from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.stage3_data_readiness import (
-    build_stage3_readiness_summary,
     build_stage3_summary,
     decide_stage3_status,
     render_stage3_readiness_report,
@@ -257,20 +256,50 @@ def test_readiness_blocks_malformed_chapter_structure(tmp_path):
     rows[0]["chapter_structure"] = [{"beat": "承接", "goal": "推进", "estimated_chars": "300"}]
     write_jsonl(chapter_cards, rows)
 
-    summary = build_stage3_readiness_summary(
+    summary = build_stage3_summary(
         raw_dir=raw_dir,
-        chapters_raw_path=chapters_raw,
-        chapters_path=chapters,
-        chapters_split_path=chapters_split,
-        chapter_cards_path=chapter_cards,
-        eval_cards_path=eval_cards,
-        sft_dataset_path=sft_dataset,
+        chapters_raw=chapters_raw,
+        chapters=chapters,
+        chapters_split=chapters_split,
+        chapter_cards=chapter_cards,
+        eval_cards=eval_cards,
+        sft_dataset=sft_dataset,
         smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
     )
 
     assert summary["decision"] == "blocked_missing_chapter_cards"
     assert summary["card_issues"]["schema_errors"]
-    assert "chapter_structure[0].step" in summary["card_issues"]["schema_errors"][0]
+    assert any("chapter_structure[0].step" in error for error in summary["card_issues"]["schema_errors"])
+
+
+def test_empty_prompt_lists_warn_without_blocking_readiness(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(chapter_cards, [_card("train_1", must_include=[], must_not_include=[]), _card("eval_1")])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "ready_for_stage4_smoke_training"
+    assert summary["card_issues"]["schema_errors"] == []
+    assert summary["card_issues"]["cards_with_empty_lists"] == [
+        {"id": "train_1", "field": "must_include"},
+        {"id": "train_1", "field": "must_not_include"},
+    ]
+    assert "some chapter cards have empty must_include or must_not_include lists" in summary["warnings"]
 
 
 def test_empty_sft_dataset_blocks_as_sft_empty(tmp_path):

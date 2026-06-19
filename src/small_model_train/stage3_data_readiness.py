@@ -21,6 +21,11 @@ REQUIRED_CARD_FIELDS = [
     "target_word_count",
 ]
 
+WARNING_ONLY_CARD_VALIDATION_ERRORS = {
+    "empty required field: must_include",
+    "empty required field: must_not_include",
+}
+
 
 def _card_id(card: dict) -> str:
     return str(card.get("id") or "<missing id>")
@@ -84,7 +89,8 @@ def _inspect_cards(cards: list, require_required_fields: bool) -> dict:
             try:
                 validate_chapter_card(card)
             except ValueError as exc:
-                issues["schema_errors"].append(f"{card.get('id', '<missing-id>')}: {exc}")
+                if str(exc) not in WARNING_ONLY_CARD_VALIDATION_ERRORS:
+                    issues["schema_errors"].append(f"{card.get('id', '<missing-id>')}: {exc}")
 
         if require_required_fields:
             for field in ("must_include", "must_not_include"):
@@ -386,34 +392,6 @@ def build_stage3_summary(
         "blockers": blockers,
         "warnings": warnings,
     }
-
-
-def build_stage3_readiness_summary(
-    raw_dir,
-    chapters_raw_path,
-    chapters_path,
-    chapters_split_path,
-    chapter_cards_path,
-    eval_cards_path,
-    sft_dataset_path,
-    smoke_dry_run=None,
-    min_trainable_sft=2,
-    min_eval_cards=1,
-    preferred_eval_cards=1,
-) -> dict:
-    return build_stage3_summary(
-        raw_dir=raw_dir,
-        chapters_raw=chapters_raw_path,
-        chapters=chapters_path,
-        chapters_split=chapters_split_path,
-        chapter_cards=chapter_cards_path,
-        eval_cards=eval_cards_path,
-        sft_dataset=sft_dataset_path,
-        smoke_dry_run=smoke_dry_run,
-        min_trainable_sft=min_trainable_sft,
-        min_eval_cards=min_eval_cards,
-        preferred_eval_cards=preferred_eval_cards,
-    )
 
 
 def _format_mapping(mapping: dict) -> list[str]:
