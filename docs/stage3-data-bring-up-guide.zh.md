@@ -49,10 +49,12 @@ python scripts/build_style_contract.py --chapters data_clean/chapters_split.json
 
 人工或使用受控辅助流程准备 `data_cards/chapter_cards.jsonl`。每行是一张章节卡，字段应描述写作目标、结构、人物状态和约束，不要把目标正文直接写进提示字段。
 
+章节卡的 `id` 必须与 `data_clean/chapters_split.jsonl` 中对应章节的 `id` 完全一致；`build_sft_dataset.py` 会按这个字段把章节卡和目标正文配对。
+
 示例：
 
 ```json
-{"id":"train_001","style_contract":"只输出正文；保持短句推进，动作和感官细节清楚。","previous_summary":"上一章林默发现交易地点临时改到旧仓库。","chapter_goal":"林默进入旧仓库，与对方完成试探式谈判，并发现箱子异常。","chapter_structure":[{"step":1,"name":"入场","goal":"交代地点、天气和警惕感","estimated_chars":"300-500"},{"step":2,"name":"谈判","goal":"通过短对白推进利益冲突","estimated_chars":"900-1200"},{"step":3,"name":"异常","goal":"让箱子响动形成收束悬念","estimated_chars":"300-500"}],"character_states":[{"name":"林默","state":"冷静但警惕，先观察再行动","speech_style":"短句，少解释"},{"name":"周衡","state":"试图压价，又不愿失去交易","speech_style":"客气里带威胁"}],"must_include":["旧仓库","加钱","箱子响动"],"must_not_include":["真相大白","旁白解释全部背景"],"ending_hook":"箱子在无人触碰时响了一下。","target_word_count":"2000-2500中文汉字","source_text":"离线溯源文本，可记录对应原文或来源说明；构建训练提示时不应进入 prompt。"}
+{"id":"novel_a_chapter_0001","style_contract":"只输出正文；保持短句推进，动作和感官细节清楚。","previous_summary":"上一章林默发现交易地点临时改到旧仓库。","chapter_goal":"林默进入旧仓库，与对方完成试探式谈判，并发现箱子异常。","chapter_structure":[{"step":1,"name":"入场","goal":"交代地点、天气和警惕感","estimated_chars":"300-500"},{"step":2,"name":"谈判","goal":"通过短对白推进利益冲突","estimated_chars":"900-1200"},{"step":3,"name":"异常","goal":"让箱子响动形成收束悬念","estimated_chars":"300-500"}],"character_states":[{"name":"林默","state":"冷静但警惕，先观察再行动","speech_style":"短句，少解释"},{"name":"周衡","state":"试图压价，又不愿失去交易","speech_style":"客气里带威胁"}],"must_include":["旧仓库","加钱","箱子响动"],"must_not_include":["真相大白","旁白解释全部背景"],"ending_hook":"箱子在无人触碰时响了一下。","target_word_count":"2000-2500中文汉字","source_text":"离线溯源文本，可记录对应原文或来源说明；构建训练提示时不应进入 prompt。"}
 ```
 
 ## 6. 构建 SFT 数据集

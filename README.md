@@ -50,8 +50,8 @@ Run Stage 2 from a shell with the training environment activated. The local base
 ```powershell
 python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507
 python scripts/check_training_env.py
-python scripts/run_sft_smoke.py --dry-run
-python scripts/run_sft_smoke.py
+python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_20.jsonl --dry-run
+python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_20.jsonl
 python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_report.md --title "SFT Smoke Adapter Check"
 python scripts/run_oom_probe.py --dry-run
 python scripts/run_oom_probe.py
