@@ -1,0 +1,218 @@
+from __future__ import annotations
+
+from small_model_train.io_utils import write_jsonl
+from small_model_train.stage3_data_readiness import (
+    build_stage3_summary,
+    render_stage3_readiness_report,
+)
+
+
+def _card(card_id: str = "train_1", **overrides: object) -> dict:
+    card = {
+        "id": card_id,
+        "style_contract": "契约",
+        "previous_summary": "前情摘要",
+        "chapter_goal": "推进冲突",
+        "chapter_structure": [{"step": 1, "name": "开场", "goal": "抬高风险", "estimated_chars": "300"}],
+        "character_states": [{"name": "林默", "state": "警惕", "speech_style": "短句"}],
+        "must_include": ["旧钥匙"],
+        "must_not_include": ["提前揭露真相"],
+        "ending_hook": "门外传来脚步声",
+        "target_word_count": "2000-2500中文汉字",
+        "source_text": "原文只用于输出，不进入提示词。",
+    }
+    card.update(overrides)
+    return card
+
+
+def _write_ready_artifacts(tmp_path):
+    raw_dir = tmp_path / "data_raw" / "novels"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "book.txt").write_text("第一章\n正文", encoding="utf-8")
+
+    chapters_raw = tmp_path / "chapters_raw.jsonl"
+    chapters = tmp_path / "chapters.jsonl"
+    chapters_split = tmp_path / "chapters_split.jsonl"
+    chapter_cards = tmp_path / "chapter_cards.jsonl"
+    eval_cards = tmp_path / "eval_cards.jsonl"
+    sft_dataset = tmp_path / "sft.jsonl"
+
+    chapter_rows = [
+        {"id": "train_1", "text": "这是训练章节正文。", "quality_tag": "A"},
+        {"id": "eval_1", "text": "这是评估章节正文。", "quality_tag": "B"},
+    ]
+    write_jsonl(chapters_raw, chapter_rows)
+    write_jsonl(chapters, chapter_rows)
+    write_jsonl(
+        chapters_split,
+        [
+            {"id": "train_1", "text": "这是训练章节正文。", "quality_tag": "A", "split": "train"},
+            {"id": "eval_1", "text": "这是评估章节正文。", "quality_tag": "B", "split": "eval"},
+        ],
+    )
+    write_jsonl(chapter_cards, [_card("train_1"), _card("eval_1")])
+    write_jsonl(eval_cards, [_card("eval_1")])
+    write_jsonl(
+        sft_dataset,
+        [
+            {"instruction": "写正文", "input": "卡片1", "output": "正文1"},
+            {"instruction": "写正文", "input": "卡片2", "output": "正文2"},
+        ],
+    )
+    return raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset
+
+
+def _summary(tmp_path, **overrides):
+    paths = _write_ready_artifacts(tmp_path)
+    options = {
+        "smoke_dry_run": {"exit_code": 0, "command": "python scripts/run_sft_smoke.py --dry-run", "stderr": ""},
+        "min_trainable_sft": 2,
+        "min_eval_cards": 1,
+        "preferred_eval_cards": 1,
+    }
+    options.update(overrides)
+    return build_stage3_summary(*paths, **options)
+
+
+def test_ready_summary_with_synthetic_data(tmp_path):
+    summary = _summary(tmp_path)
+
+    assert summary["decision"] == "ready_for_stage4_smoke_training"
+    assert summary["raw_text_file_count"] == 1
+    assert summary["chapters_raw_count"] == 2
+    assert summary["chapter_count"] == 2
+    assert summary["split_count"] == 2
+    assert summary["train_count"] == 1
+    assert summary["eval_split_count"] == 1
+    assert summary["quality_tag_counts"] == {"A": 1, "B": 1}
+    assert summary["chapter_length"] == {"min": 8, "max": 8, "avg": 8}
+    assert summary["chapter_card_count"] == 2
+    assert summary["eval_card_count"] == 1
+    assert summary["sft_row_count"] == 2
+    assert summary["blockers"] == []
+    assert summary["warnings"] == ["SFT dataset has 2 rows, below preferred 100"]
+
+
+def test_missing_raw_text_blocks_summary(tmp_path):
+    raw_dir, *paths = _write_ready_artifacts(tmp_path)
+    (raw_dir / "book.txt").unlink()
+
+    summary = build_stage3_summary(
+        raw_dir,
+        *paths,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_missing_raw_text"
+    assert any("data_raw/novels has no .txt or .md files" in blocker for blocker in summary["blockers"])
+
+
+def test_missing_required_card_field_blocks_with_exact_issue(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    broken_card = _card("train_1")
+    del broken_card["chapter_goal"]
+    write_jsonl(chapter_cards, [broken_card, _card("eval_1")])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["card_issues"]["missing_required_fields"] == [
+        {"id": "train_1", "missing_fields": ["chapter_goal"]}
+    ]
+
+
+def test_source_text_leakage_via_previous_summary_blocks(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(
+        chapter_cards,
+        [
+            _card(
+                "train_1",
+                previous_summary="上一章直接复述：这是一段非常独特的原文句子，必须被抓住。",
+                source_text="这是一段非常独特的原文句子，不能进入提示词。",
+            ),
+            _card("eval_1"),
+        ],
+    )
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_source_leakage"
+    assert any("train_1:" in error for error in summary["card_issues"]["source_leakage_errors"])
+
+
+def test_empty_sft_dataset_blocks_as_sft_empty(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(sft_dataset, [])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_sft_empty"
+
+
+def test_empty_eval_cards_blocks_as_eval_missing(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(eval_cards, [])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_eval_missing"
+
+
+def test_render_report_contains_required_readiness_lines(tmp_path):
+    report = render_stage3_readiness_report(_summary(tmp_path))
+
+    assert "# Stage 3 Data Readiness Report" in report
+    assert "ready_for_stage4_smoke_training" in report
+    assert "- SFT 样本数：2" in report
