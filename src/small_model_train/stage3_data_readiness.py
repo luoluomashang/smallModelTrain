@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from small_model_train.chapter_cards import validate_chapter_card
 from small_model_train.io_utils import read_jsonl
 from small_model_train.sft_builder import render_sft_input
 from small_model_train.text_utils import count_chinese_chars
@@ -79,6 +80,11 @@ def _inspect_cards(cards: list, require_required_fields: bool) -> dict:
                 issues["missing_required_fields"].append({"id": _card_id(card), "missing_fields": missing_fields})
 
         issues["schema_errors"].extend(_validate_card_schema(card))
+        if require_required_fields:
+            try:
+                validate_chapter_card(card)
+            except ValueError as exc:
+                issues["schema_errors"].append(f"{card.get('id', '<missing-id>')}: {exc}")
 
         if require_required_fields:
             for field in ("must_include", "must_not_include"):
@@ -380,6 +386,34 @@ def build_stage3_summary(
         "blockers": blockers,
         "warnings": warnings,
     }
+
+
+def build_stage3_readiness_summary(
+    raw_dir,
+    chapters_raw_path,
+    chapters_path,
+    chapters_split_path,
+    chapter_cards_path,
+    eval_cards_path,
+    sft_dataset_path,
+    smoke_dry_run=None,
+    min_trainable_sft=2,
+    min_eval_cards=1,
+    preferred_eval_cards=1,
+) -> dict:
+    return build_stage3_summary(
+        raw_dir=raw_dir,
+        chapters_raw=chapters_raw_path,
+        chapters=chapters_path,
+        chapters_split=chapters_split_path,
+        chapter_cards=chapter_cards_path,
+        eval_cards=eval_cards_path,
+        sft_dataset=sft_dataset_path,
+        smoke_dry_run=smoke_dry_run,
+        min_trainable_sft=min_trainable_sft,
+        min_eval_cards=min_eval_cards,
+        preferred_eval_cards=preferred_eval_cards,
+    )
 
 
 def _format_mapping(mapping: dict) -> list[str]:

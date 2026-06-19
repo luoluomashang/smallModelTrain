@@ -3,8 +3,9 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from small_model_train.io_utils import write_jsonl
+from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.stage3_data_readiness import (
+    build_stage3_readiness_summary,
     build_stage3_summary,
     decide_stage3_status,
     render_stage3_readiness_report,
@@ -248,6 +249,28 @@ def test_non_string_prompt_list_item_blocks_as_schema_error(tmp_path):
     assert summary["card_issues"]["schema_errors"] == [
         "train_1: must_not_include must be a list of strings"
     ]
+
+
+def test_readiness_blocks_malformed_chapter_structure(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    rows = read_jsonl(chapter_cards)
+    rows[0]["chapter_structure"] = [{"beat": "承接", "goal": "推进", "estimated_chars": "300"}]
+    write_jsonl(chapter_cards, rows)
+
+    summary = build_stage3_readiness_summary(
+        raw_dir=raw_dir,
+        chapters_raw_path=chapters_raw,
+        chapters_path=chapters,
+        chapters_split_path=chapters_split,
+        chapter_cards_path=chapter_cards,
+        eval_cards_path=eval_cards,
+        sft_dataset_path=sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+    )
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["card_issues"]["schema_errors"]
+    assert "chapter_structure[0].step" in summary["card_issues"]["schema_errors"][0]
 
 
 def test_empty_sft_dataset_blocks_as_sft_empty(tmp_path):
