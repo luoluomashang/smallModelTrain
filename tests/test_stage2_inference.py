@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,10 @@ from small_model_train.stage2_inference import (
     default_inference_params,
     render_eval_prompt,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def _card(sample_id: str = "eval-1") -> dict:
@@ -196,6 +201,40 @@ def test_worker_card_loader_fails_before_gpu_imports_for_missing_or_empty_cards(
         load_eval_cards(missing)
     with pytest.raises(ValueError, match="cards file has no rows"):
         load_eval_cards(empty)
+
+
+def test_worker_resets_stale_output_and_appends_rows_incrementally(
+    tmp_path: Path,
+):
+    from scripts.stage2_eval_worker import append_generation_row, reset_generation_output
+
+    output_path = tmp_path / "nested" / "generated.jsonl"
+    output_path.parent.mkdir()
+    output_path.write_text('{"id":"stale"}\n', encoding="utf-8")
+
+    reset_generation_output(output_path)
+
+    assert output_path.exists()
+    assert output_path.read_text(encoding="utf-8") == ""
+
+    append_generation_row(output_path, {"id": "eval-1", "output": "一"})
+
+    assert _read_jsonl(output_path) == [{"id": "eval-1", "output": "一"}]
+
+    append_generation_row(output_path, {"id": "eval-2", "output": "二"})
+
+    assert _read_jsonl(output_path) == [
+        {"id": "eval-1", "output": "一"},
+        {"id": "eval-2", "output": "二"},
+    ]
+
+
+def test_worker_progress_message_includes_count_total_and_id(capsys):
+    from scripts.stage2_eval_worker import print_generation_progress
+
+    print_generation_progress(completed=3, total=50, sample_id="eval-003")
+
+    assert capsys.readouterr().out == "generated 3/50 eval-003\n"
 
 
 def test_non_dry_run_success_writes_and_echoes_stdout(

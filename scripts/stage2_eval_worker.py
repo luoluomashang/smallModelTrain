@@ -7,6 +7,7 @@ exit codes remain visible even when model loading or generation fails.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -15,13 +16,30 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from small_model_train.io_utils import write_jsonl
 from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
     load_eval_cards,
     render_eval_prompt,
 )
+
+
+def reset_generation_output(path: str | Path) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("", encoding="utf-8")
+
+
+def append_generation_row(path: str | Path, row: dict) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+
+
+def print_generation_progress(completed: int, total: int, sample_id: str) -> None:
+    print(f"generated {completed}/{total} {sample_id}", flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+    reset_generation_output(args.output)
 
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -61,8 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     model = PeftModel.from_pretrained(base_model, args.adapter_dir)
     model.eval()
 
-    rows = []
-    for card in cards:
+    for index, card in enumerate(cards, start=1):
         prompt = render_eval_prompt(card)
         inputs = tokenizer(prompt, return_tensors="pt")
         device = getattr(model, "device", None)
@@ -82,17 +101,19 @@ def main(argv: list[str] | None = None) -> int:
         prompt_length = inputs["input_ids"].shape[-1]
         new_tokens = generated[0][prompt_length:]
         output = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-        rows.append(
+        sample_id = str(card.get("id", ""))
+        append_generation_row(
+            args.output,
             build_generation_row(
-                str(card.get("id", "")),
+                sample_id,
                 output,
                 args.model_name,
                 params,
-            )
+            ),
         )
+        print_generation_progress(index, len(cards), sample_id)
 
-    write_jsonl(args.output, rows)
-    print(f"wrote {len(rows)} generations to {args.output}")
+    print(f"wrote {len(cards)} generations to {args.output}")
     return 0
 
 
