@@ -185,7 +185,14 @@ def decide_stage3_status(
     card_count = len(card_rows) if not isinstance(card_rows, int) else card_rows
     sft_count = len(sft_rows) if not isinstance(sft_rows, int) else sft_rows
     eval_count = len(eval_rows) if not isinstance(eval_rows, int) else eval_rows
-    eval_split_count = len(eval_split_rows) if eval_split_rows is not None and not isinstance(eval_split_rows, int) else eval_split_rows
+    if eval_split_rows is None:
+        eval_split_count = (
+            sum(1 for row in split_rows if isinstance(row, dict) and row.get("split") == "eval")
+            if isinstance(split_rows, list)
+            else 0
+        )
+    else:
+        eval_split_count = len(eval_split_rows) if not isinstance(eval_split_rows, int) else eval_split_rows
 
     if raw_count == 0:
         return "blocked_missing_raw_text"

@@ -6,6 +6,7 @@ import sys
 from small_model_train.io_utils import write_jsonl
 from small_model_train.stage3_data_readiness import (
     build_stage3_summary,
+    decide_stage3_status,
     render_stage3_readiness_report,
 )
 
@@ -289,6 +290,33 @@ def test_empty_eval_cards_blocks_as_eval_missing(tmp_path):
     )
 
     assert summary["decision"] == "blocked_eval_missing"
+
+
+def test_decide_stage3_status_derives_missing_eval_split_rows():
+    split_rows = [{"id": "train_1", "split": "train", "quality_tag": "A"}]
+    train_rows = [split_rows[0]]
+
+    decision = decide_stage3_status(
+        raw_files=1,
+        split_rows=split_rows,
+        train_rows=train_rows,
+        card_rows=[_card("train_1")],
+        card_issues={
+            "missing_required_fields": [],
+            "source_leakage_errors": [],
+            "render_errors": [],
+            "schema_errors": [],
+            "non_object_rows": [],
+            "unmatched_chapter_ids": [],
+        },
+        sft_rows=[{"input": "x"}],
+        eval_rows=[_card("eval_1")],
+        dry_run={"exit_code": 0},
+        min_trainable_sft=1,
+        min_eval_cards=1,
+    )
+
+    assert decision == "blocked_insufficient_chapters"
 
 
 def test_missing_eval_split_rows_blocks_even_with_eval_cards(tmp_path):
