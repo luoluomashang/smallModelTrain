@@ -51,11 +51,17 @@ def validate_chapter_card(card: dict[str, Any]) -> None:
     for field in REQUIRED_CARD_FIELDS:
         if field not in card:
             raise ValueError(f"missing required field: {field}")
-        if card[field] in ("", None, []):
+        if field not in {"chapter_structure", "character_states"} and card[field] in ("", None, []):
             raise ValueError(f"empty required field: {field}")
 
-    for index, item in enumerate(card["chapter_structure"]):
-        if not item.get("step"):
+    chapter_structure = card["chapter_structure"]
+    if not isinstance(chapter_structure, list) or not chapter_structure:
+        raise ValueError("chapter_structure must be a non-empty list")
+    for index, item in enumerate(chapter_structure):
+        if not isinstance(item, dict):
+            raise ValueError(f"chapter_structure[{index}] must be a dict")
+        step = item.get("step")
+        if not isinstance(step, int) or step < 1:
             raise ValueError(f"chapter_structure[{index}].step is required")
         if not item.get("name"):
             raise ValueError(f"chapter_structure[{index}].name is required")
@@ -64,7 +70,12 @@ def validate_chapter_card(card: dict[str, Any]) -> None:
         if not item.get("estimated_chars"):
             raise ValueError(f"chapter_structure[{index}].estimated_chars is required")
 
-    for index, item in enumerate(card["character_states"]):
+    character_states = card["character_states"]
+    if not isinstance(character_states, list) or not character_states:
+        raise ValueError("character_states must be a non-empty list")
+    for index, item in enumerate(character_states):
+        if not isinstance(item, dict):
+            raise ValueError(f"character_states[{index}] must be a dict")
         if not item.get("name"):
             raise ValueError(f"character_states[{index}].name is required")
         if not item.get("state"):
@@ -79,12 +90,15 @@ def build_draft_chapter_cards(
     min_chars: int,
     max_chars: int,
 ) -> list[dict[str, Any]]:
+    if count < 0:
+        raise ValueError("count must be >= 0")
+
     candidates = [
         chapter
         for chapter in chapters
         if chapter.get("split") == "train"
         and chapter.get("quality_tag") == "A"
-        and min_chars <= int(chapter.get("char_count_zh", 0)) <= max_chars
+        and _chapter_char_count_in_range(chapter, min_chars, max_chars)
     ]
     cards = [_build_card(chapter) for chapter in candidates[:count]]
     for card in cards:
@@ -134,6 +148,14 @@ def _structure_for(char_count: int) -> list[dict[str, str | int]]:
         }
         for index, (name, goal, ratio) in enumerate(STRUCTURE_TEMPLATE, start=1)
     ]
+
+
+def _chapter_char_count_in_range(chapter: dict[str, Any], min_chars: int, max_chars: int) -> bool:
+    try:
+        char_count = int(chapter.get("char_count_zh", 0))
+    except (TypeError, ValueError):
+        return False
+    return min_chars <= char_count <= max_chars
 
 
 def _target_word_count(char_count: int) -> str:

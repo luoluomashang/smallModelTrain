@@ -20,6 +20,22 @@ def _chapter(sample_id: str = "chapter-1", char_count: int = 2800) -> dict:
     }
 
 
+def _valid_card() -> dict:
+    return {
+        "id": "chapter-1",
+        "style_contract": "只输出正文。",
+        "previous_summary": "前情摘要。",
+        "chapter_goal": "推进冲突。",
+        "chapter_structure": [{"step": 1, "name": "承接", "goal": "推进。", "estimated_chars": "400"}],
+        "character_states": [{"name": "核心视角人物", "state": "谨慎", "speech_style": "短句"}],
+        "must_include": ["清楚的开场状态"],
+        "must_not_include": ["输出提纲或小标题"],
+        "ending_hook": "留下下一步压力。",
+        "target_word_count": "2500-3000中文汉字",
+        "source_text": "正文" * 100,
+    }
+
+
 def test_normalize_chapter_structure_writes_step_and_name():
     items = [
         {"beat": "承接", "goal": "承接上一章压力。", "estimated_chars": 400},
@@ -35,21 +51,53 @@ def test_normalize_chapter_structure_writes_step_and_name():
 
 
 def test_validate_chapter_card_rejects_empty_structure_labels():
-    card = {
-        "id": "chapter-1",
-        "style_contract": "只输出正文。",
-        "previous_summary": "前情摘要。",
-        "chapter_goal": "推进冲突。",
-        "chapter_structure": [{"beat": "承接", "goal": "推进。", "estimated_chars": 400}],
-        "character_states": [{"name": "核心视角人物", "state": "谨慎", "speech_style": "短句"}],
-        "must_include": ["清楚的开场状态"],
-        "must_not_include": ["输出提纲或小标题"],
-        "ending_hook": "留下下一步压力。",
-        "target_word_count": "2500-3000中文汉字",
-        "source_text": "正文" * 100,
-    }
+    card = _valid_card()
+    card["chapter_structure"] = [{"beat": "承接", "goal": "推进。", "estimated_chars": 400}]
 
     with pytest.raises(ValueError, match="chapter_structure\\[0\\].step"):
+        validate_chapter_card(card)
+
+
+@pytest.mark.parametrize("chapter_structure", ["bad", {"step": 1}, None])
+def test_validate_chapter_card_rejects_malformed_structure_container(chapter_structure):
+    card = _valid_card()
+    card["chapter_structure"] = chapter_structure
+
+    with pytest.raises(ValueError, match="chapter_structure must be a non-empty list"):
+        validate_chapter_card(card)
+
+
+@pytest.mark.parametrize(
+    ("item", "message"),
+    [
+        ("bad", "chapter_structure\\[0\\] must be a dict"),
+        ({"step": 0, "name": "承接", "goal": "推进。", "estimated_chars": "400"}, "chapter_structure\\[0\\].step"),
+        ({"step": -1, "name": "承接", "goal": "推进。", "estimated_chars": "400"}, "chapter_structure\\[0\\].step"),
+        ({"step": "one", "name": "承接", "goal": "推进。", "estimated_chars": "400"}, "chapter_structure\\[0\\].step"),
+    ],
+)
+def test_validate_chapter_card_rejects_malformed_structure_items(item, message):
+    card = _valid_card()
+    card["chapter_structure"] = [item]
+
+    with pytest.raises(ValueError, match=message):
+        validate_chapter_card(card)
+
+
+@pytest.mark.parametrize("character_states", ["bad", {"name": "核心视角人物"}, None])
+def test_validate_chapter_card_rejects_malformed_character_states_container(character_states):
+    card = _valid_card()
+    card["character_states"] = character_states
+
+    with pytest.raises(ValueError, match="character_states must be a non-empty list"):
+        validate_chapter_card(card)
+
+
+def test_validate_chapter_card_rejects_malformed_character_state_item():
+    card = _valid_card()
+    card["character_states"] = ["bad"]
+
+    with pytest.raises(ValueError, match="character_states\\[0\\] must be a dict"):
         validate_chapter_card(card)
 
 
@@ -66,3 +114,32 @@ def test_build_draft_chapter_cards_uses_train_a_chapters_only():
     assert cards[0]["chapter_structure"][0]["step"] == 1
     assert cards[0]["chapter_structure"][0]["name"] == "承接"
     assert cards[0]["source_text"].startswith("正文")
+
+
+def test_build_draft_chapter_cards_filters_char_count_bounds_inclusively():
+    chapters = [
+        _chapter("too-short", 1999),
+        _chapter("lower-bound", 2000),
+        _chapter("upper-bound", 3000),
+        _chapter("too-long", 3001),
+    ]
+
+    cards = build_draft_chapter_cards(chapters, count=10, min_chars=2000, max_chars=3000)
+
+    assert [card["id"] for card in cards] == ["lower-bound", "upper-bound"]
+
+
+def test_build_draft_chapter_cards_skips_malformed_char_count_rows():
+    chapters = [
+        {**_chapter("bad-count", 2800), "char_count_zh": "unknown"},
+        _chapter("valid", 2800),
+    ]
+
+    cards = build_draft_chapter_cards(chapters, count=10, min_chars=2000, max_chars=3000)
+
+    assert [card["id"] for card in cards] == ["valid"]
+
+
+def test_build_draft_chapter_cards_rejects_negative_count():
+    with pytest.raises(ValueError, match="count must be >= 0"):
+        build_draft_chapter_cards([_chapter("valid", 2800)], count=-1, min_chars=2000, max_chars=3000)
