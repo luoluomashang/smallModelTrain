@@ -53,7 +53,13 @@ python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_50.jsonl --dr
 python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_50.jsonl
 ```
 
-实际证据中，默认 `cutoff_len: 8192` 发生 OOM；成功 run 使用 retry config，将 `cutoff_len` 降到 `6144`。记录报告时必须写明 retry config。不要把 resume 后出现的 `train_loss=0.0` 当作有效训练指标。
+实际证据中，默认 `cutoff_len: 8192` 发生 OOM；成功 run 使用 retry config，将 `cutoff_len` 降到 `6144`。本机当时使用的 ignored retry config 路径是 `outputs/sft_smoke_retry_6144.yaml`，可用以下命令重跑：
+
+```powershell
+python scripts/run_sft_smoke.py --config outputs/sft_smoke_retry_6144.yaml --eval-cards data_cards/eval_cards_50.jsonl
+```
+
+因为 `outputs/` 被 git ignore，未来复跑前不要假设这个文件一定存在。需要先重新生成 `outputs/sft_smoke_retry_6144.yaml`，或在明确改动范围允许时提交等价的 checked-in config，再依赖这条 retry 命令。记录报告时必须写明 retry config。不要把 resume 后出现的 `train_loss=0.0` 当作有效训练指标。
 
 adapter 检查命令：
 
