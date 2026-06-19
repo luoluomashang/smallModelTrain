@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -222,3 +223,55 @@ def test_build_sft_dataset_cli_writes_jsonl_without_source_text(tmp_path):
     assert output_path.exists()
     assert rows[0]["output"] == "正文"
     assert "泄漏文本" not in rows[0]["input"]
+
+
+def test_build_sft_dataset_cli_writes_llamafactory_dataset_info(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "sft_chapter_v1.jsonl"
+    dataset_info_path = tmp_path / "dataset_info.json"
+    write_jsonl(
+        cards_path,
+        [
+            {
+                "id": "c1",
+                "style_contract": "契约",
+                "previous_summary": "前情",
+                "chapter_goal": "目标",
+                "target_word_count": "2000-2500中文汉字",
+                "chapter_structure": [
+                    {"step": 1, "name": "开场", "goal": "引出冲突", "estimated_chars": "300"}
+                ],
+                "character_states": [{"name": "林默", "state": "冷静", "speech_style": "短句"}],
+                "must_include": ["加钱"],
+                "must_not_include": ["提前揭露真相"],
+                "ending_hook": "箱子响了一下",
+            }
+        ],
+    )
+    write_jsonl(chapters_path, [{"id": "c1", "text": "正文", "split": "train", "quality_tag": "A"}])
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--dataset-info-output",
+            str(dataset_info_path),
+        ],
+        check=True,
+    )
+
+    info = json.loads(dataset_info_path.read_text(encoding="utf-8"))
+    assert info["sft_chapter_v1"]["file_name"] == "sft_chapter_v1.jsonl"
+    assert info["sft_chapter_v1"]["formatting"] == "alpaca"
+    assert info["sft_chapter_v1"]["columns"] == {
+        "prompt": "instruction",
+        "query": "input",
+        "response": "output",
+    }
