@@ -37,6 +37,9 @@ def main() -> None:
     parser.add_argument("--dataset-info-output")
     args = parser.parse_args()
 
+    if args.dataset_info_output and Path(args.output).resolve() == Path(args.dataset_info_output).resolve():
+        parser.error("--dataset-info-output must not be the same path as --output")
+
     rows = build_sft_rows(read_jsonl(args.cards), read_jsonl(args.chapters))
     write_jsonl(args.output, rows)
     if args.dataset_info_output:

@@ -267,6 +267,10 @@ def test_build_sft_dataset_cli_writes_llamafactory_dataset_info(tmp_path):
         check=True,
     )
 
+    rows = read_jsonl(output_path)
+    assert output_path.exists()
+    assert rows[0]["output"] == "正文"
+
     info = json.loads(dataset_info_path.read_text(encoding="utf-8"))
     assert info["sft_chapter_v1"]["file_name"] == "sft_chapter_v1.jsonl"
     assert info["sft_chapter_v1"]["formatting"] == "alpaca"
@@ -275,3 +279,49 @@ def test_build_sft_dataset_cli_writes_llamafactory_dataset_info(tmp_path):
         "query": "input",
         "response": "output",
     }
+
+
+def test_build_sft_dataset_cli_rejects_dataset_info_same_as_output(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "sft_chapter_v1.jsonl"
+    write_jsonl(
+        cards_path,
+        [
+            {
+                "id": "c1",
+                "style_contract": "契约",
+                "previous_summary": "前情",
+                "chapter_goal": "目标",
+                "target_word_count": "2000-2500中文汉字",
+                "chapter_structure": [],
+                "character_states": [],
+                "must_include": [],
+                "must_not_include": [],
+                "ending_hook": "",
+            }
+        ],
+    )
+    write_jsonl(chapters_path, [{"id": "c1", "text": "正文", "split": "train", "quality_tag": "A"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--dataset-info-output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "--dataset-info-output must not be the same path as --output" in result.stderr
+    assert not output_path.exists()
