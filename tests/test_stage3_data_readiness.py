@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+
 from small_model_train.io_utils import write_jsonl
 from small_model_train.stage3_data_readiness import (
     build_stage3_summary,
@@ -294,3 +297,45 @@ def test_render_report_contains_required_readiness_lines(tmp_path):
     assert "# Stage 3 Data Readiness Report" in report
     assert "ready_for_stage4_smoke_training" in report
     assert "- SFT 样本数：2" in report
+
+
+def test_cli_without_smoke_dry_run_writes_blocked_report(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    report = tmp_path / "reports" / "stage3_data_readiness_report.md"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check_stage3_data_readiness.py",
+            "--raw-dir",
+            str(raw_dir),
+            "--chapters-raw",
+            str(chapters_raw),
+            "--chapters",
+            str(chapters),
+            "--chapters-split",
+            str(chapters_split),
+            "--chapter-cards",
+            str(chapter_cards),
+            "--eval-cards",
+            str(eval_cards),
+            "--sft-dataset",
+            str(sft_dataset),
+            "--report",
+            str(report),
+            "--min-trainable-sft",
+            "2",
+            "--min-eval-cards",
+            "1",
+            "--preferred-eval-cards",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert report.exists()
+    report_text = report.read_text(encoding="utf-8")
+    assert "blocked_stage2_dry_run_failed" in report_text
+    assert "smoke dry-run has not been run" in report_text
