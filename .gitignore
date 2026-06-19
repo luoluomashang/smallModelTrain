@@ -1,3 +1,15 @@
 .worktrees/
 __pycache__/
 *.py[cod]
+
+# Local raw data and generated training artifacts
+data_raw/
+data_clean/
+data_cards/
+data_sft/
+data_pref/
+outputs/
+reports/
+logs/
+style_contract.md
+style_profile.json
