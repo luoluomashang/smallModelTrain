@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from small_model_train.chapter_cards import (
@@ -7,6 +10,7 @@ from small_model_train.chapter_cards import (
     normalize_chapter_structure,
     validate_chapter_card,
 )
+from small_model_train.io_utils import read_jsonl, write_jsonl
 
 
 def _chapter(sample_id: str = "chapter-1", char_count: int = 2800) -> dict:
@@ -143,3 +147,32 @@ def test_build_draft_chapter_cards_skips_malformed_char_count_rows():
 def test_build_draft_chapter_cards_rejects_negative_count():
     with pytest.raises(ValueError, match="count must be >= 0"):
         build_draft_chapter_cards([_chapter("valid", 2800)], count=-1, min_chars=2000, max_chars=3000)
+
+
+def test_build_chapter_cards_cli_writes_fixed_cards(tmp_path):
+    chapters_path = tmp_path / "chapters_split.jsonl"
+    output_path = tmp_path / "chapter_cards.jsonl"
+    write_jsonl(chapters_path, [_chapter("train-a", 2800)])
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_chapter_cards.py",
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--count",
+            "1",
+            "--min-chars",
+            "2000",
+            "--max-chars",
+            "3000",
+        ],
+        check=True,
+    )
+
+    rows = read_jsonl(output_path)
+    assert len(rows) == 1
+    assert rows[0]["chapter_structure"][0]["step"] == 1
+    assert rows[0]["chapter_structure"][0]["name"] == "承接"
