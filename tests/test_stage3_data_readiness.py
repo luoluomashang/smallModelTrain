@@ -291,6 +291,113 @@ def test_empty_eval_cards_blocks_as_eval_missing(tmp_path):
     assert summary["decision"] == "blocked_eval_missing"
 
 
+def test_missing_eval_split_rows_blocks_even_with_eval_cards(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(
+        chapters_split,
+        [{"id": "train_1", "text": "这是训练章节正文。", "quality_tag": "A", "split": "train"}],
+    )
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_insufficient_chapters"
+    assert "chapters_split has no eval rows" in summary["blockers"]
+
+
+def test_non_object_chapter_card_row_blocks_without_raising(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(chapter_cards, [[], _card("train_1")])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+    report = render_stage3_readiness_report(summary)
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["card_issues"]["non_object_rows"] == ["row_1: card row must be a JSON object"]
+    assert "non_object_rows" in report
+
+
+def test_eval_card_source_leakage_blocks_separately(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(
+        eval_cards,
+        [
+            _card(
+                "eval_1",
+                previous_summary="评估卡泄漏：这是一段非常独特的评估原文，应该阻断。",
+                source_text="这是一段非常独特的评估原文，不能进入提示词。",
+            )
+        ],
+    )
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+    report = render_stage3_readiness_report(summary)
+
+    assert summary["decision"] == "blocked_source_leakage"
+    assert summary["card_issues"]["source_leakage_errors"] == []
+    assert any("eval_1:" in error for error in summary["eval_card_issues"]["source_leakage_errors"])
+    assert "Eval Card Issues" in report
+
+
+def test_unmatched_trainable_chapter_card_id_blocks(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(chapter_cards, [_card("missing_trainable"), _card("eval_1")])
+
+    summary = build_stage3_summary(
+        raw_dir,
+        chapters_raw,
+        chapters,
+        chapters_split,
+        chapter_cards,
+        eval_cards,
+        sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+    report = render_stage3_readiness_report(summary)
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["card_issues"]["unmatched_chapter_ids"] == ["missing_trainable"]
+    assert "missing_trainable" in report
+
+
 def test_render_report_contains_required_readiness_lines(tmp_path):
     report = render_stage3_readiness_report(_summary(tmp_path))
 

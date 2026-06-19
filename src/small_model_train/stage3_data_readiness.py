@@ -32,9 +32,9 @@ def _count_raw_text_files(raw_dir: str | Path) -> int:
     return sum(1 for path in root.rglob("*") if path.is_file() and path.suffix.lower() in {".txt", ".md"})
 
 
-def _validate_card_schema(card: dict) -> list[str]:
+def _validate_card_schema(card: dict, row_label: str | None = None) -> list[str]:
     errors = []
-    card_id = _card_id(card)
+    card_id = row_label or _card_id(card)
 
     for field in ("chapter_structure", "character_states"):
         value = card.get(field)
@@ -53,37 +53,105 @@ def _validate_card_schema(card: dict) -> list[str]:
     return errors
 
 
-def inspect_chapter_cards(cards: list[dict]) -> dict:
-    missing_required_fields = []
-    source_leakage_errors = []
-    render_errors = []
-    schema_errors = []
-    cards_with_empty_lists = []
+def _empty_card_issues() -> dict:
+    return {
+        "missing_required_fields": [],
+        "source_leakage_errors": [],
+        "render_errors": [],
+        "schema_errors": [],
+        "non_object_rows": [],
+        "unmatched_chapter_ids": [],
+        "cards_with_empty_lists": [],
+    }
 
-    for card in cards:
-        missing_fields = [field for field in REQUIRED_CARD_FIELDS if field not in card]
-        if missing_fields:
-            missing_required_fields.append({"id": _card_id(card), "missing_fields": missing_fields})
-        schema_errors.extend(_validate_card_schema(card))
 
-        for field in ("must_include", "must_not_include"):
-            if field in card and card[field] == []:
-                cards_with_empty_lists.append({"id": _card_id(card), "field": field})
+def _inspect_cards(cards: list, require_required_fields: bool) -> dict:
+    issues = _empty_card_issues()
+
+    for index, card in enumerate(cards, start=1):
+        if not isinstance(card, dict):
+            issues["non_object_rows"].append(f"row_{index}: card row must be a JSON object")
+            continue
+
+        if require_required_fields:
+            missing_fields = [field for field in REQUIRED_CARD_FIELDS if field not in card]
+            if missing_fields:
+                issues["missing_required_fields"].append({"id": _card_id(card), "missing_fields": missing_fields})
+
+        issues["schema_errors"].extend(_validate_card_schema(card))
+
+        if require_required_fields:
+            for field in ("must_include", "must_not_include"):
+                if field in card and card[field] == []:
+                    issues["cards_with_empty_lists"].append({"id": _card_id(card), "field": field})
 
         try:
             render_sft_input(card)
         except ValueError as exc:
-            source_leakage_errors.append(f"{_card_id(card)}: {exc}")
+            issues["source_leakage_errors"].append(f"{_card_id(card)}: {exc}")
         except (AttributeError, TypeError) as exc:
-            render_errors.append(f"{_card_id(card)}: {type(exc).__name__}: {exc}")
+            issues["render_errors"].append(f"{_card_id(card)}: {type(exc).__name__}: {exc}")
 
-    return {
-        "missing_required_fields": missing_required_fields,
-        "source_leakage_errors": source_leakage_errors,
-        "render_errors": render_errors,
-        "schema_errors": schema_errors,
-        "cards_with_empty_lists": cards_with_empty_lists,
+    return issues
+
+
+def inspect_chapter_cards(cards: list) -> dict:
+    return _inspect_cards(cards, require_required_fields=True)
+
+
+def inspect_eval_cards(cards: list) -> dict:
+    issues = _inspect_cards(cards, require_required_fields=False)
+    issues.pop("missing_required_fields")
+    issues.pop("unmatched_chapter_ids")
+    issues.pop("cards_with_empty_lists")
+    return issues
+
+
+def _with_unmatched_chapter_ids(card_issues: dict, cards: list, split_rows: list[dict]) -> dict:
+    trainable_ids = {
+        row.get("id")
+        for row in split_rows
+        if isinstance(row, dict) and row.get("split") == "train" and row.get("quality_tag") == "A"
     }
+    split_ids = {row.get("id") for row in split_rows if isinstance(row, dict)}
+    unmatched = []
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        card_id = card.get("id")
+        if card_id in trainable_ids:
+            continue
+        if card_id not in split_ids:
+            unmatched.append(str(card_id or "<missing id>"))
+    card_issues["unmatched_chapter_ids"] = unmatched
+    return card_issues
+
+
+def _has_card_blocking_issues(card_issues: dict) -> bool:
+    return bool(
+        card_issues.get("missing_required_fields")
+        or card_issues.get("render_errors")
+        or card_issues.get("schema_errors")
+        or card_issues.get("non_object_rows")
+        or card_issues.get("unmatched_chapter_ids")
+    )
+
+
+def _has_eval_card_blocking_issues(eval_card_issues: dict | None) -> bool:
+    if not eval_card_issues:
+        return False
+    return bool(
+        eval_card_issues.get("render_errors")
+        or eval_card_issues.get("schema_errors")
+        or eval_card_issues.get("non_object_rows")
+    )
+
+
+def _has_source_leakage(card_issues: dict, eval_card_issues: dict | None = None) -> bool:
+    return bool(
+        card_issues.get("source_leakage_errors")
+        or (eval_card_issues and eval_card_issues.get("source_leakage_errors"))
+    )
 
 
 def summarize_chapter_lengths(rows: list[dict]) -> dict:
@@ -108,6 +176,8 @@ def decide_stage3_status(
     dry_run: dict,
     min_trainable_sft: int,
     min_eval_cards: int,
+    eval_split_rows: int | list[dict] | None = None,
+    eval_card_issues: dict | None = None,
 ) -> str:
     raw_count = len(raw_files) if not isinstance(raw_files, int) else raw_files
     split_count = len(split_rows) if not isinstance(split_rows, int) else split_rows
@@ -115,19 +185,15 @@ def decide_stage3_status(
     card_count = len(card_rows) if not isinstance(card_rows, int) else card_rows
     sft_count = len(sft_rows) if not isinstance(sft_rows, int) else sft_rows
     eval_count = len(eval_rows) if not isinstance(eval_rows, int) else eval_rows
+    eval_split_count = len(eval_split_rows) if eval_split_rows is not None and not isinstance(eval_split_rows, int) else eval_split_rows
 
     if raw_count == 0:
         return "blocked_missing_raw_text"
-    if split_count == 0 or train_count == 0 or (0 < sft_count < min_trainable_sft):
+    if split_count == 0 or train_count == 0 or eval_split_count == 0 or (0 < sft_count < min_trainable_sft):
         return "blocked_insufficient_chapters"
-    if (
-        card_count == 0
-        or card_issues.get("missing_required_fields")
-        or card_issues.get("render_errors")
-        or card_issues.get("schema_errors")
-    ):
+    if card_count == 0 or _has_card_blocking_issues(card_issues) or _has_eval_card_blocking_issues(eval_card_issues):
         return "blocked_missing_chapter_cards"
-    if card_issues.get("source_leakage_errors"):
+    if _has_source_leakage(card_issues, eval_card_issues):
         return "blocked_source_leakage"
     if sft_count == 0:
         return "blocked_sft_empty"
@@ -146,6 +212,7 @@ def _build_blockers(
     eval_split_count: int,
     chapter_card_count: int,
     card_issues: dict,
+    eval_card_issues: dict,
     sft_row_count: int,
     eval_card_count: int,
     smoke_dry_run: dict,
@@ -167,12 +234,24 @@ def _build_blockers(
         blockers.append("chapter cards are missing")
     if card_issues.get("missing_required_fields"):
         blockers.append("chapter cards are missing required fields")
+    if card_issues.get("non_object_rows"):
+        blockers.append("chapter cards contain non-object JSONL rows")
+    if card_issues.get("unmatched_chapter_ids"):
+        blockers.append("chapter cards include ids that do not match split chapters")
     if card_issues.get("render_errors"):
         blockers.append("chapter cards have malformed fields that cannot render SFT inputs")
     if card_issues.get("schema_errors"):
         blockers.append("chapter cards have malformed schema fields")
     if card_issues.get("source_leakage_errors"):
         blockers.append("chapter cards contain source_text leakage in rendered SFT inputs")
+    if eval_card_issues.get("non_object_rows"):
+        blockers.append("eval cards contain non-object JSONL rows")
+    if eval_card_issues.get("render_errors"):
+        blockers.append("eval cards have malformed fields that cannot render SFT inputs")
+    if eval_card_issues.get("schema_errors"):
+        blockers.append("eval cards have malformed schema fields")
+    if eval_card_issues.get("source_leakage_errors"):
+        blockers.append("eval cards contain source_text leakage in rendered SFT inputs")
     if sft_row_count == 0:
         blockers.append("SFT dataset is empty")
     elif sft_row_count < min_trainable_sft:
@@ -226,10 +305,11 @@ def build_stage3_summary(
     eval_card_rows = read_jsonl(eval_cards)
     sft_rows = read_jsonl(sft_dataset)
 
-    train_rows = [row for row in split_rows if row.get("split") == "train"]
-    eval_split_rows = [row for row in split_rows if row.get("split") == "eval"]
+    train_rows = [row for row in split_rows if isinstance(row, dict) and row.get("split") == "train"]
+    eval_split_rows = [row for row in split_rows if isinstance(row, dict) and row.get("split") == "eval"]
     raw_text_file_count = _count_raw_text_files(raw_dir)
-    card_issues = inspect_chapter_cards(card_rows)
+    card_issues = _with_unmatched_chapter_ids(inspect_chapter_cards(card_rows), card_rows, split_rows)
+    eval_card_issues = inspect_eval_cards(eval_card_rows)
 
     decision = decide_stage3_status(
         raw_text_file_count,
@@ -242,8 +322,12 @@ def build_stage3_summary(
         smoke_dry_run,
         min_trainable_sft,
         min_eval_cards,
+        eval_split_rows,
+        eval_card_issues,
     )
-    quality_tag_counts = dict(Counter(row.get("quality_tag", "<missing>") for row in split_rows))
+    quality_tag_counts = dict(
+        Counter(row.get("quality_tag", "<missing>") for row in split_rows if isinstance(row, dict))
+    )
     blockers = _build_blockers(
         raw_dir,
         raw_text_file_count,
@@ -252,6 +336,7 @@ def build_stage3_summary(
         len(eval_split_rows),
         len(card_rows),
         card_issues,
+        eval_card_issues,
         len(sft_rows),
         len(eval_card_rows),
         smoke_dry_run,
@@ -283,6 +368,7 @@ def build_stage3_summary(
         "eval_card_count": len(eval_card_rows),
         "sft_row_count": len(sft_rows),
         "card_issues": card_issues,
+        "eval_card_issues": eval_card_issues,
         "smoke_dry_run": smoke_dry_run,
         "blockers": blockers,
         "warnings": warnings,
@@ -338,7 +424,15 @@ def render_stage3_readiness_report(summary: dict) -> str:
             f"- source_leakage_errors：{summary['card_issues'].get('source_leakage_errors', [])}",
             f"- render_errors：{summary['card_issues'].get('render_errors', [])}",
             f"- schema_errors：{summary['card_issues'].get('schema_errors', [])}",
+            f"- non_object_rows：{summary['card_issues'].get('non_object_rows', [])}",
+            f"- unmatched_chapter_ids：{summary['card_issues'].get('unmatched_chapter_ids', [])}",
             f"- cards_with_empty_lists：{summary['card_issues'].get('cards_with_empty_lists', [])}",
+            "",
+            "## Eval Card Issues",
+            f"- source_leakage_errors：{summary.get('eval_card_issues', {}).get('source_leakage_errors', [])}",
+            f"- render_errors：{summary.get('eval_card_issues', {}).get('render_errors', [])}",
+            f"- schema_errors：{summary.get('eval_card_issues', {}).get('schema_errors', [])}",
+            f"- non_object_rows：{summary.get('eval_card_issues', {}).get('non_object_rows', [])}",
             "",
             "## Smoke Dry-Run",
             f"- exit_code：{summary['smoke_dry_run'].get('exit_code')}",
