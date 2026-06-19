@@ -11,5 +11,6 @@ data_pref/
 outputs/
 reports/
 logs/
+mlflow.db
 style_contract.md
 style_profile.json
