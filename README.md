@@ -43,6 +43,28 @@ python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards
 
 See `docs/stage3-data-bring-up-guide.zh.md` for the full Chinese runbook.
 
+## Stage 4 Smoke Eval
+
+Stage 4 starts only after Stage 3 reports `ready_for_stage4_smoke_training`. It uses the repaired 50-card path to rebuild data, run real smoke training, check the adapter, run budgetized eval inference, score outputs, and make the expansion decision.
+
+```powershell
+python scripts/build_chapter_cards.py --chapters data_clean/chapters_split.jsonl --output data_cards/chapter_cards.jsonl --count 50 --min-chars 2000 --max-chars 3000
+python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl --dataset-info-output data_sft/dataset_info.json
+python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
+python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507 --report reports/model_check_report.md
+python scripts/check_training_env.py --report reports/training_env_report.md
+python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_50.jsonl --dry-run
+python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_50.jsonl
+python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_report.md --title "SFT Smoke Adapter Check"
+python scripts/run_eval_inference.py --cards data_cards/eval_cards_50.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated.jsonl --model-name sft_smoke --event-log logs/training/sft_smoke_eval_events.jsonl --stderr-log logs/training/sft_smoke_eval_stderr.log --stdout-log logs/training/sft_smoke_eval_stdout.log --max-new-tokens 256
+python scripts/score_outputs.py --cards data_cards/eval_cards_50.jsonl --outputs outputs/sft_smoke/generated.jsonl --output outputs/sft_smoke/metrics.jsonl
+python scripts/evaluate_outputs.py --scores outputs/sft_smoke/metrics.jsonl --report reports/sft_smoke_eval_report.md --title "SFT Smoke Eval Report"
+```
+
+The `--max-new-tokens 256` eval proves infrastructure only. Quality expansion requires the criteria in `docs/stage4-decision-log.zh.md`: long-generation subset success, budget for 2000-2500 Chinese chars, leak reduction, and full 50 long eval passing the agreed gate.
+
+See `docs/stage4-smoke-eval-guide.zh.md` for the full Chinese runbook and `docs/stage4-decision-log.zh.md` for the current decision.
+
 ## Stage 2 Training Execution
 
 Run Stage 2 from a shell with the training environment activated. The local base model path is `E:\models\Qwen3-4B-Instruct-2507`.
