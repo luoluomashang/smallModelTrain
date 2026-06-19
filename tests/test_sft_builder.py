@@ -68,6 +68,24 @@ def test_render_sft_input_allows_nonleaking_source_text():
     assert "这是一段非常独特的原文句子" not in text
 
 
+def test_render_sft_input_rejects_structure_without_step_or_name():
+    card = {
+        "style_contract": "契约",
+        "previous_summary": "前情",
+        "chapter_goal": "目标",
+        "target_word_count": "2000-2500中文汉字",
+        "chapter_structure": [{"beat": "承接", "goal": "推进", "estimated_chars": "300"}],
+        "character_states": [{"name": "林默", "state": "冷静", "speech_style": "短句"}],
+        "must_include": ["加钱"],
+        "must_not_include": ["提前揭露真相"],
+        "ending_hook": "箱子响了一下",
+        "source_text": "",
+    }
+
+    with pytest.raises(ValueError, match="chapter_structure\\[0\\].step"):
+        render_sft_input(card)
+
+
 def test_build_sft_rows_pairs_cards_with_chapters():
     cards = [
         {

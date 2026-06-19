@@ -38,11 +38,19 @@ def _format_structure(items: list[dict]) -> str:
     if not items:
         return "【章节结构】\n- 无"
     lines = ["【章节结构】"]
-    for item in items:
-        step = item.get("step", "")
-        name = item.get("name", "")
-        goal = item.get("goal", "")
-        chars = item.get("estimated_chars", "")
+    for index, item in enumerate(items):
+        step = item.get("step")
+        name = item.get("name")
+        goal = item.get("goal")
+        chars = item.get("estimated_chars")
+        if not step:
+            raise ValueError(f"chapter_structure[{index}].step is required")
+        if not name:
+            raise ValueError(f"chapter_structure[{index}].name is required")
+        if not goal:
+            raise ValueError(f"chapter_structure[{index}].goal is required")
+        if not chars:
+            raise ValueError(f"chapter_structure[{index}].estimated_chars is required")
         lines.append(f"- {step}. {name}：{goal}（建议 {chars}）")
     return "\n".join(lines)
 
