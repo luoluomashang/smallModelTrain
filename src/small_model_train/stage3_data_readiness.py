@@ -8,7 +8,7 @@ from typing import Any
 
 from small_model_train.chapter_cards import validate_chapter_card
 from small_model_train.io_utils import read_jsonl
-from small_model_train.sft_builder import render_sft_input
+from small_model_train.sft_builder import is_source_text_leak_error, render_sft_input
 from small_model_train.text_utils import count_chinese_chars
 
 
@@ -100,7 +100,11 @@ def _inspect_cards(cards: list, require_required_fields: bool) -> dict:
         try:
             render_sft_input(card)
         except ValueError as exc:
-            issues["source_leakage_errors"].append(f"{_card_id(card)}: {exc}")
+            issue = f"{_card_id(card)}: {exc}"
+            if is_source_text_leak_error(exc):
+                issues["source_leakage_errors"].append(issue)
+            else:
+                issues["render_errors"].append(issue)
         except (AttributeError, TypeError) as exc:
             issues["render_errors"].append(f"{_card_id(card)}: {type(exc).__name__}: {exc}")
 

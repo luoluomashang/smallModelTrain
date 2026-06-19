@@ -12,6 +12,11 @@ import re
 
 INSTRUCTION = "你是作者的正文执行器。请严格根据章节执行卡，写出符合作者风格的一章正文。"
 SOURCE_LEAK_MIN_CHARS = 12
+SOURCE_LEAK_ERROR_PREFIX = "SFT input contains source_text fragment"
+
+
+def is_source_text_leak_error(error: ValueError) -> bool:
+    return str(error).startswith(SOURCE_LEAK_ERROR_PREFIX)
 
 
 def _find_source_text_leak(rendered_input: str, source_text: str, min_chars: int = SOURCE_LEAK_MIN_CHARS) -> str | None:
@@ -43,14 +48,14 @@ def _format_structure(items: list[dict]) -> str:
         name = item.get("name")
         goal = item.get("goal")
         chars = item.get("estimated_chars")
-        if not step:
-            raise ValueError(f"chapter_structure[{index}].step is required")
+        if type(step) is not int or step < 1:
+            raise ValueError(f"chapter_structure[{index}].step must be a positive integer")
         if not name:
             raise ValueError(f"chapter_structure[{index}].name is required")
         if not goal:
             raise ValueError(f"chapter_structure[{index}].goal is required")
-        if not chars:
-            raise ValueError(f"chapter_structure[{index}].estimated_chars is required")
+        if not isinstance(chars, str) or not chars.strip():
+            raise ValueError(f"chapter_structure[{index}].estimated_chars must be a non-empty string")
         lines.append(f"- {step}. {name}：{goal}（建议 {chars}）")
     return "\n".join(lines)
 
@@ -88,7 +93,7 @@ def render_sft_input(card: dict) -> str:
     rendered_input = "\n".join(section for section in sections if section is not None)
     leak = _find_source_text_leak(rendered_input, card.get("source_text", ""))
     if leak:
-        raise ValueError(f"SFT input contains source_text fragment: {leak}")
+        raise ValueError(f"{SOURCE_LEAK_ERROR_PREFIX}: {leak}")
     return rendered_input
 
 

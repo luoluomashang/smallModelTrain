@@ -273,6 +273,80 @@ def test_readiness_blocks_malformed_chapter_structure(tmp_path):
     assert summary["decision"] == "blocked_missing_chapter_cards"
     assert summary["card_issues"]["schema_errors"]
     assert any("chapter_structure[0].step" in error for error in summary["card_issues"]["schema_errors"])
+    assert summary["card_issues"]["source_leakage_errors"] == []
+
+
+def test_readiness_classifies_structure_render_value_errors_as_render_errors(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(
+        chapter_cards,
+        [
+            _card(
+                "train_1",
+                chapter_structure=[
+                    {"step": "1", "name": "开场", "goal": "推进", "estimated_chars": "300"}
+                ],
+            ),
+            _card("eval_1"),
+        ],
+    )
+
+    summary = build_stage3_summary(
+        raw_dir=raw_dir,
+        chapters_raw=chapters_raw,
+        chapters=chapters,
+        chapters_split=chapters_split,
+        chapter_cards=chapter_cards,
+        eval_cards=eval_cards,
+        sft_dataset=sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["card_issues"]["source_leakage_errors"] == []
+    assert any(
+        "chapter_structure[0].step must be a positive integer" in error
+        for error in summary["card_issues"]["render_errors"]
+    )
+
+
+def test_readiness_classifies_eval_structure_render_value_errors_as_render_errors(tmp_path):
+    raw_dir, chapters_raw, chapters, chapters_split, chapter_cards, eval_cards, sft_dataset = _write_ready_artifacts(tmp_path)
+    write_jsonl(
+        eval_cards,
+        [
+            _card(
+                "eval_1",
+                chapter_structure=[
+                    {"step": "1", "name": "开场", "goal": "推进", "estimated_chars": "300"}
+                ],
+            )
+        ],
+    )
+
+    summary = build_stage3_summary(
+        raw_dir=raw_dir,
+        chapters_raw=chapters_raw,
+        chapters=chapters,
+        chapters_split=chapters_split,
+        chapter_cards=chapter_cards,
+        eval_cards=eval_cards,
+        sft_dataset=sft_dataset,
+        smoke_dry_run={"exit_code": 0, "command": "dry-run", "stderr": ""},
+        min_trainable_sft=2,
+        min_eval_cards=1,
+        preferred_eval_cards=1,
+    )
+
+    assert summary["decision"] == "blocked_missing_chapter_cards"
+    assert summary["eval_card_issues"]["source_leakage_errors"] == []
+    assert any(
+        "chapter_structure[0].step must be a positive integer" in error
+        for error in summary["eval_card_issues"]["render_errors"]
+    )
 
 
 def test_empty_prompt_lists_warn_without_blocking_readiness(tmp_path):

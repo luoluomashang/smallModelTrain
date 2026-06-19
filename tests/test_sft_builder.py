@@ -87,6 +87,49 @@ def test_render_sft_input_rejects_structure_without_step_or_name():
         render_sft_input(card)
 
 
+def test_render_sft_input_rejects_non_integer_structure_step():
+    card = {
+        "style_contract": "契约",
+        "previous_summary": "前情",
+        "chapter_goal": "目标",
+        "target_word_count": "2000-2500中文汉字",
+        "chapter_structure": [
+            {"step": "1", "name": "开场", "goal": "推进", "estimated_chars": "300"}
+        ],
+        "character_states": [{"name": "林默", "state": "冷静", "speech_style": "短句"}],
+        "must_include": ["加钱"],
+        "must_not_include": ["提前揭露真相"],
+        "ending_hook": "箱子响了一下",
+        "source_text": "",
+    }
+
+    with pytest.raises(ValueError, match="chapter_structure\\[0\\].step must be a positive integer"):
+        render_sft_input(card)
+
+
+def test_build_sft_rows_rejects_non_integer_structure_step():
+    cards = [
+        {
+            "id": "c1",
+            "style_contract": "契约",
+            "previous_summary": "",
+            "chapter_goal": "目标",
+            "target_word_count": "2000-2500中文汉字",
+            "chapter_structure": [
+                {"step": "1", "name": "开场", "goal": "推进", "estimated_chars": "300"}
+            ],
+            "character_states": [],
+            "must_include": [],
+            "must_not_include": [],
+            "ending_hook": "",
+        }
+    ]
+    chapters = [{"id": "c1", "text": "正文", "split": "train", "quality_tag": "A"}]
+
+    with pytest.raises(ValueError, match="chapter_structure\\[0\\].step must be a positive integer"):
+        build_sft_rows(cards, chapters)
+
+
 def test_build_sft_rows_pairs_cards_with_chapters():
     cards = [
         {
