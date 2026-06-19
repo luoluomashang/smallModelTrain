@@ -66,6 +66,8 @@ The `--max-new-tokens 256` eval proves infrastructure only. Quality expansion re
 
 See `docs/stage4-smoke-eval-guide.zh.md` for the full Chinese runbook and `docs/stage4-decision-log.zh.md` for the current decision.
 
+For a handoff summary and next-stage outlook, see `docs/stage4-summary-next-outlook.zh.md`.
+
 ## Stage 2 Training Execution
 
 Run Stage 2 from a shell with the training environment activated. The local base model path is `E:\models\Qwen3-4B-Instruct-2507`.
