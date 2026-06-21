@@ -1,4 +1,4 @@
-# Agent Review Acceptance System Design
+# Male Webnovel Agent Review Acceptance System Design
 
 ## Context
 
@@ -12,14 +12,16 @@ Stage 4.1 full50 exposed a gap in the current acceptance system. The old rule-ba
 
 The acceptance system must become a layered gate. Rule metrics remain necessary, but they cannot be the only source of truth. Agent reading review must become a required middle layer before human approval or expansion decisions.
 
+The user later clarified that the target is not traditional prose or general literary fiction. The acceptance standard must be aligned to male-frequency commercial webnovel chapters in the direction of Fanqie Novel and Qidian: clear hook, fast readable progression, protagonist agency, genre payoff, and a concrete reason to continue reading.
+
 ## Goal
 
-Build a two-stage acceptance workflow:
+Build a two-stage acceptance workflow for male-frequency webnovel chapter acceptance:
 
 1. Use Codex subagents now to perform structured reading review with majority voting.
 2. After the rubric stabilizes, implement a project CLI that runs the same review contract and writes reproducible review artifacts.
 
-The immediate deliverable is a design and later an implementation plan. No new training expansion should proceed until this acceptance layer is in place and has blocked the known bad full50 artifact.
+The immediate deliverable is a design and later an implementation plan. No new training expansion should proceed until this acceptance layer is in place and has blocked the known bad full50 artifact. Passing means "ready to serve as male webnovel training evidence", not "beautiful literary writing".
 
 ## Non-Goals
 
@@ -27,7 +29,27 @@ The immediate deliverable is a design and later an implementation plan. No new t
 - Do not rely on one human read-through as the only quality signal.
 - Do not treat exact n-gram repetition as sufficient coverage for semantic repetition.
 - Do not put generated chapter prose into Markdown reports; reports may include IDs, labels, short issue summaries, and brief compliant snippets only when necessary.
-- Do not build a general-purpose literary judge. The system is an acceptance gate for this project’s chapter-generation pipeline.
+- Do not build a general-purpose literary judge. The system is an acceptance gate for this project’s male webnovel chapter-generation pipeline.
+- Do not reward traditional literary polish when it weakens pace, hook, agency, or payoff.
+- Do not encode or claim any non-public platform algorithm. Platform profiles are rubric presets based on public-facing genre direction and the project's target style.
+
+## Target Platform Profile
+
+Every review run must declare a `target_platform`:
+
+- `fanqie`: favors direct readability, fast setup, high conflict frequency, clear emotional payoff, and low-friction continuation.
+- `qidian`: favors genre contract, power or resource progression, setting continuity, arc-level setup, and payoff that supports long serialization.
+- `hybrid_fanqie_qidian`: default first-version profile. It uses Fanqie's pace and hook bias while retaining Qidian-style genre consistency and progression logic.
+
+The review should also carry lightweight `genre_tags` when known, such as `urban`, `xuanhuan`, `xianxia`, `system`, `fantasy`, `sci_fi`, or `mystery`. Unknown tags do not block by themselves, but the profile cannot be empty.
+
+The first version should optimize for chapter-level evidence:
+
+- Is there an opening hook or immediate pressure?
+- Does the protagonist have a visible goal, decision, or action?
+- Does the chapter create or escalate conflict?
+- Is there at least one concrete payoff, reveal, gain, reversal, or pressure increase?
+- Does the ending create a specific reason to read the next chapter?
 
 ## Acceptance Layers
 
@@ -44,6 +66,8 @@ The deterministic scorer remains the first gate. The first implementation should
 - suspicious ending/truncation.
 - generic phrase overuse.
 - must-include and forbidden coverage when execution cards provide those fields.
+- platform profile presence.
+- execution-card fields for chapter goal, conflict beat, payoff beat, and ending hook when the selected eval mode requires them.
 
 Rule-gate status values should distinguish:
 
@@ -52,20 +76,26 @@ Rule-gate status values should distinguish:
 
 ### Layer 2: Agent Reading Gate
 
-Agent reading review is a majority-vote hard gate. For each eval batch, three reviewer roles read the generated output against the card and metrics.
+Agent reading review is a majority-vote hard gate. For each eval batch, three reviewer roles read the generated output against the card, metrics, and target platform profile. The reviewer question is not "is this good literature?" The question is "does this behave like an acceptable male webnovel chapter for the selected platform profile?"
 
 Reviewer roles:
 
-1. **Structure Reviewer**
-   - Checks whether the output is a coherent chapter-like unit.
+1. **Readthrough Structure Reviewer**
+   - Checks whether the chapter creates continued-reading momentum.
+   - Looks for opening hook, clear chapter goal, scene progression, conflict escalation, rhythm, and ending hook.
    - Detects padding-by-repetition, repeated information points, missing progression, weak conflict movement, and unnatural closure.
 
-2. **Style Reviewer**
-   - Checks style drift, generic AI phrasing, tonal mismatch, mechanical paragraph rhythm, over-explanation, and simplified/traditional style mixing.
+2. **Male-Genre Payoff Reviewer**
+   - Checks whether the chapter delivers or advances male-frequency genre satisfaction.
+   - Looks for protagonist agency, concrete action, status/resource/power gain, reveal, reversal, face-slapping, pressure increase, or setup that clearly promises payoff.
+   - Detects passive rumination, setup without payoff, empty "the protagonist understood/changed" claims, and chapters where nothing materially changes.
 
-3. **Compliance Reviewer**
+3. **Platform Style and Compliance Reviewer**
+   - Checks whether the output matches the selected `target_platform` profile and genre tags.
+   - For `fanqie`, watches pace, low-friction readability, direct conflict, and quick emotional payoff.
+   - For `qidian`, watches genre contract, world/rule consistency, progression logic, and serialized arc coherence.
    - Checks whether the output is only prose.
-   - Detects markdown, disclaimers, final confirmations, internal prompt language, residual outline/meta text, truncation, and execution-card requirement failures.
+   - Detects style drift, generic AI phrasing, tonal mismatch, mechanical paragraph rhythm, over-explanation, simplified/traditional style mixing, markdown, disclaimers, final confirmations, internal prompt language, residual outline/meta text, truncation, and execution-card requirement failures.
 
 Majority rule:
 
@@ -104,6 +134,7 @@ Inputs:
 - execution cards JSONL, preferably a real execution-card file.
 - generated outputs JSONL.
 - rule metrics JSONL.
+- target platform profile and genre tags.
 - reviewer rubric prompt.
 
 Outputs:
@@ -117,15 +148,18 @@ Per-sample review JSON schema:
 ```json
 {
   "id": "sample-id",
-  "reviewer": "structure",
+  "target_platform": "hybrid_fanqie_qidian",
+  "genre_tags": ["urban", "system"],
+  "rubric_version": "male_webnovel_v1",
+  "reviewer": "readthrough_structure",
   "pass": false,
   "severity": "blocker",
-  "issues": ["semantic_repetition", "padding_to_length"],
+  "issues": ["semantic_repetition", "weak_plot_progression", "weak_ending_hook"],
   "evidence": [
     {
       "type": "summary",
       "location": "middle-to-late output",
-      "note": "The same relationship explanation is restated several times without new plot movement."
+      "note": "The chapter restates the same relationship explanation several times without a new action, payoff, or next-chapter pressure."
     }
   ],
   "recommendation": "reject_or_retry",
@@ -135,9 +169,9 @@ Per-sample review JSON schema:
 
 Allowed reviewer names:
 
-- `structure`
-- `style`
-- `compliance`
+- `readthrough_structure`
+- `male_genre_payoff`
+- `platform_style_compliance`
 
 Allowed severity values:
 
@@ -148,6 +182,18 @@ Allowed severity values:
 
 Common issue labels:
 
+- `missing_opening_hook`
+- `missing_chapter_goal`
+- `weak_conflict_escalation`
+- `weak_ending_hook`
+- `weak_protagonist_agency`
+- `no_visible_payoff`
+- `setup_without_payoff`
+- `passive_rumination`
+- `empty_powerup_claim`
+- `male_frequency_contract_miss`
+- `platform_tone_mismatch`
+- `over_literary_prose`
 - `semantic_repetition`
 - `padding_to_length`
 - `generic_ai_phrase`
@@ -184,6 +230,7 @@ python scripts/run_agent_review.py `
   --cards data_cards/eval_execution_cards_50.jsonl `
   --outputs outputs/sft_smoke/generated.jsonl `
   --metrics outputs/sft_smoke/metrics.jsonl `
+  --target-platform hybrid_fanqie_qidian `
   --output outputs/sft_smoke/agent_reviews.jsonl `
   --report reports/stage4_agent_review_report.md
 ```
@@ -210,6 +257,9 @@ CLI outputs:
 Required fields:
 
 - `id`
+- `target_platform`
+- `genre_tags`
+- `rubric_version`
 - `reviewer`
 - `pass`
 - `severity`
@@ -223,6 +273,7 @@ Required fields:
 Required fields:
 
 - `id`
+- `target_platform`
 - `review_count`
 - `pass_votes`
 - `fail_votes`
@@ -236,6 +287,8 @@ Required fields:
 
 Required fields:
 
+- `target_platform`
+- `rubric_version`
 - `expected_rows`
 - `reviewed_rows`
 - `missing_review_ids`
@@ -258,6 +311,8 @@ Decision values:
 
 Schema mismatch is a blocking error. If cards do not contain execution-card fields required for the selected eval mode, the pipeline must fail before generation or review.
 
+Unknown or empty `target_platform` is a blocking error. `genre_tags` may be empty only when the eval card is explicitly genre-agnostic.
+
 Missing reviews are blocking. If a sample has fewer than three reviewer rows, its `agent_gate_pass` is false and the batch decision is `blocked_incomplete_agent_review`.
 
 Malformed reviewer output is blocking for that reviewer and sample. The coordinator should preserve the malformed row path or parse error in the report, but it must not silently ignore it.
@@ -273,6 +328,7 @@ Unit tests:
 - mark human arbitration when any reviewer sets `severity = blocker`.
 - block incomplete reviews.
 - block schema-mismatched eval cards.
+- block empty or unknown target platform values.
 - report issue counts without copying full generated text.
 
 CLI tests:
@@ -286,12 +342,16 @@ Regression fixtures:
 
 - Include a small synthetic output with semantic repetition that exact 4-gram repetition does not catch.
 - Include a synthetic output with markdown/meta residue.
-- Include a synthetic output that passes all three reviewers.
+- Include a synthetic output with no protagonist action or payoff despite adequate length.
+- Include a synthetic output with a literary but slow passage that lacks hook and next-chapter pressure.
+- Include a synthetic output that passes all three male-webnovel reviewers.
 
 ## Reporting
 
 The Stage 4 quality report should no longer decide promotion from rule metrics alone. It should include:
 
+- target platform profile.
+- genre tags when available.
 - rule-gate decision.
 - agent-review decision.
 - human-arbitration decision.
@@ -307,12 +367,13 @@ A final expansion decision can only be `ready_for_next_expansion` when:
 ## Migration Plan
 
 1. Mark the current full50 merged result as invalid for promotion evidence.
-2. Add schema guard for eval execution cards.
-3. Add deterministic quality rules for the known blind spots.
-4. Run Stage 1 subagent review on a small subset to calibrate the rubric.
-5. Implement the CLI once the rubric stabilizes.
-6. Re-run Stage 4.1 quality subset.
-7. Re-run full50 only after subset passes rule gate and agent gate.
+2. Build or convert eval execution cards with `target_platform`, `genre_tags`, chapter goal, conflict beat, payoff beat, and ending hook.
+3. Add schema guard for eval execution cards.
+4. Add deterministic quality rules for the known blind spots.
+5. Run Stage 1 subagent review on a small subset to calibrate the male-webnovel rubric.
+6. Implement the CLI once the rubric stabilizes.
+7. Re-run Stage 4.1 quality subset.
+8. Re-run full50 only after subset passes rule gate and agent gate.
 
 ## Fixed First-Version Policy Decisions
 
@@ -322,3 +383,5 @@ These policy decisions are fixed for the first implementation:
 - Any blocker vote requires human arbitration.
 - Human arbitration can override agent review only with a recorded reason.
 - The system should prefer blocking over false promotion.
+- The default `target_platform` is `hybrid_fanqie_qidian`.
+- The first version treats missing hook, missing protagonist agency, no visible payoff, and weak ending hook as male-webnovel acceptance risks even if prose quality looks fluent.
