@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from small_model_train.execution_cards import validate_execution_cards
 from small_model_train.io_utils import read_jsonl
 from small_model_train.sft_builder import render_sft_input
 
@@ -44,4 +45,4 @@ def load_eval_cards(path: str | Path) -> list[dict]:
     if not rows:
         raise ValueError(f"cards file has no rows: {cards_path}")
 
-    return rows
+    return validate_execution_cards(rows)

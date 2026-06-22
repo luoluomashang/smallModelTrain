@@ -31,6 +31,34 @@ def test_render_sft_input_excludes_source_text():
     assert "2000-2500中文汉字" in text
 
 
+def test_render_sft_input_includes_external_control_beats():
+    card = {
+        "style_contract": "男频短句，强冲突。",
+        "previous_summary": "林默被逼到晚宴角落。",
+        "chapter_goal": "林默必须当场破局。",
+        "chapter_structure": [
+            {
+                "step": 1,
+                "name": "压迫",
+                "goal": "岳家逼他低头。",
+                "estimated_chars": "500-700",
+            }
+        ],
+        "character_states": [],
+        "conflict_beat": "岳家当众羞辱，林默提出反赌。",
+        "payoff_beat": "林默拿出合同证据，让对方第一次失声。",
+        "must_include": ["合同证据"],
+        "must_not_include": ["作者说明"],
+        "ending_hook": "门外响起真正买家的声音。",
+        "target_word_count": "2000-2500中文汉字",
+    }
+
+    rendered = render_sft_input(card)
+
+    assert "【冲突推进】\n岳家当众羞辱，林默提出反赌。" in rendered
+    assert "【爽点兑现】\n林默拿出合同证据，让对方第一次失声。" in rendered
+
+
 def test_render_sft_input_rejects_source_text_fragment_leakage():
     card = {
         "style_contract": "契约",

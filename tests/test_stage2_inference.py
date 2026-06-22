@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from small_model_train.execution_cards import DEFAULT_TARGET_PLATFORM
 from small_model_train.io_utils import write_jsonl
 from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
+    load_eval_cards,
     render_eval_prompt,
 )
 
@@ -21,6 +23,8 @@ if str(REPO_ROOT) not in sys.path:
 def _card(sample_id: str = "eval-1") -> dict:
     return {
         "id": sample_id,
+        "target_platform": DEFAULT_TARGET_PLATFORM,
+        "genre_tags": ["悬疑", "男频"],
         "style_contract": "短句推进，动作细节清楚。",
         "previous_summary": "主角刚抵达旧城。",
         "chapter_goal": "让主角发现密室钥匙。",
@@ -32,6 +36,8 @@ def _card(sample_id: str = "eval-1") -> dict:
                 "estimated_chars": "800",
             }
         ],
+        "conflict_beat": "主角必须在管家返回前打开书房暗格。",
+        "payoff_beat": "暗格弹开，铜钥匙和旧城密道图一起出现。",
         "character_states": [
             {
                 "name": "林照",
@@ -79,6 +85,19 @@ class _FakePipe:
     def close(self) -> None:
         pass
 
+
+
+def test_load_eval_cards_requires_execution_card_schema(tmp_path):
+    cards_path = tmp_path / "raw_eval_cards.jsonl"
+    cards_path.write_text(
+        '{"id":"case1","text":"原文","quality_tag":"A","split":"eval"}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        load_eval_cards(cards_path)
+
+    assert "missing execution-card fields" in str(excinfo.value)
 
 def test_render_eval_prompt_contains_card_fields():
     prompt = render_eval_prompt(_card())
@@ -625,3 +644,5 @@ def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
     assert [event["status"] for event in events] == ["start", "failed"]
     assert events[-1]["detail"]["exit_code"] == 127
     assert "process_killed" in capsys.readouterr().err
+
+
