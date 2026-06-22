@@ -7,6 +7,7 @@ phrasing so failed samples can be triaged consistently.
 
 from __future__ import annotations
 
+from small_model_train.quality_rules import detect_quality_issues
 from small_model_train.text_utils import count_chinese_chars, repeated_ngram_ratio
 
 
@@ -44,6 +45,7 @@ def score_output(sample_id: str, card: dict, output: str) -> dict:
     must_not_include = card.get("must_not_include", [])
     include_coverage = _coverage(must_include, output)
     forbidden_hits = [item for item in must_not_include if item and item in output]
+    quality_rules = detect_quality_issues(card, output)
 
     failure_types: list[str] = []
     if char_count < 2000:
@@ -60,13 +62,23 @@ def score_output(sample_id: str, card: dict, output: str) -> dict:
         failure_types.append("repetition")
     if ai_trace["count"] > 0:
         failure_types.append("ai_trace")
+    failure_types.extend(quality_rules["issues"])
 
     hard_gate_failures = {
         "length_short",
         "length_long",
         "outline_leak",
         "forbidden_violation",
+        "must_include_missing",
         "repetition",
+        "markdown_residue",
+        "disclaimer_residue",
+        "meta_evaluation_residue",
+        "semantic_repetition",
+        "padding_to_length",
+        "unnatural_ending",
+        "no_visible_payoff",
+        "weak_ending_hook",
     }
     hard_gate_pass = not any(item in hard_gate_failures for item in failure_types)
 
@@ -80,4 +92,6 @@ def score_output(sample_id: str, card: dict, output: str) -> dict:
         "ai_trace_matches": ai_trace["matches"],
         "repeated_ngram_ratio": round(repetition, 4),
         "failure_types": failure_types,
+        "quality_rule_details": quality_rules["details"],
     }
+

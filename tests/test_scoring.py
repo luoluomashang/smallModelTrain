@@ -82,3 +82,71 @@ def test_score_outputs_cli_reads_cards_and_outputs_jsonl(tmp_path):
     assert rows[0]["id"] == "case1"
     assert rows[0]["hard_gate_pass"] is False
     assert "forbidden_violation" in rows[0]["failure_types"]
+
+
+def test_score_output_merges_quality_rule_failures():
+    card = {
+        "must_include": [],
+        "must_not_include": [],
+        "payoff_beat": "合同证据让岳家闭嘴",
+        "ending_hook": "真正买家出现",
+    }
+    output = "> 林默沉默了很久，最后只是握紧拳头。"
+
+    score = score_output("case-quality", card, output)
+
+    assert "markdown_residue" in score["failure_types"]
+    assert "no_visible_payoff" in score["failure_types"]
+    assert score["hard_gate_pass"] is False
+
+
+def _assert_quality_hard_gate(flag: str, output: str, card: dict | None = None):
+    score = score_output(
+        f"case-{flag}",
+        card or {"must_include": [], "must_not_include": []},
+        output,
+    )
+
+    assert flag in score["failure_types"]
+    assert score["hard_gate_pass"] is False
+    return score
+
+
+def test_score_output_hard_gates_disclaimer_residue():
+    _assert_quality_hard_gate("disclaimer_residue", "作为AI，我无法保证这段内容完全准确。")
+
+
+def test_score_output_hard_gates_meta_evaluation_residue():
+    _assert_quality_hard_gate("meta_evaluation_residue", "最终确认：本章完成，符合要求。")
+
+
+def test_score_output_hard_gates_semantic_repetition_and_returns_details():
+    output = (
+        "林默终于明白自己不能退。他知道自己必须向前。他清楚自己不能退缩。"
+        "林默终于明白自己不能退。他知道自己必须向前。他清楚自己不能退缩。"
+        "林默终于明白自己不能退。他知道自己必须向前。他清楚自己不能退缩。"
+    )
+
+    score = _assert_quality_hard_gate("semantic_repetition", output)
+
+    assert score["quality_rule_details"]["repeated_runs"]
+
+
+def test_score_output_hard_gates_padding_to_length():
+    output = "林默终于明白自己不能退" * 223 + "。"
+
+    _assert_quality_hard_gate("padding_to_length", output)
+
+
+def test_score_output_hard_gates_unnatural_ending():
+    _assert_quality_hard_gate("unnatural_ending", "林默看向窗外，心里有了某种决定")
+
+
+def test_score_output_hard_gates_weak_ending_hook():
+    card = {
+        "must_include": [],
+        "must_not_include": [],
+        "ending_hook": "真正买家出现",
+    }
+
+    _assert_quality_hard_gate("weak_ending_hook", "林默握紧拳头。", card)
