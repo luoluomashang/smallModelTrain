@@ -34,6 +34,13 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive float")
+    return parsed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", default="data_cards/eval_execution_cards_50.jsonl")
@@ -55,11 +62,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-new-tokens", type=positive_int)
+    parser.add_argument("--repetition-penalty", type=positive_float)
+    parser.add_argument("--no-repeat-ngram-size", type=positive_int)
     args = parser.parse_args(argv)
 
     if args.dry_run:
         try:
-            _run_dry(args.cards, args.output, args.model_name, args.max_new_tokens)
+            _run_dry(
+                args.cards,
+                args.output,
+                args.model_name,
+                args.max_new_tokens,
+                args.repetition_penalty,
+                args.no_repeat_ngram_size,
+            )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             raise SystemExit(1) from exc
@@ -127,11 +143,19 @@ def _run_dry(
     output_path: str | Path,
     model_name: str,
     max_new_tokens: int | None = None,
+    repetition_penalty: float | None = None,
+    no_repeat_ngram_size: int | None = None,
 ) -> None:
     params = default_inference_params()
     if max_new_tokens is not None:
         params = dict(params)
         params["max_new_tokens"] = max_new_tokens
+    if repetition_penalty is not None:
+        params = dict(params)
+        params["repetition_penalty"] = repetition_penalty
+    if no_repeat_ngram_size is not None:
+        params = dict(params)
+        params["no_repeat_ngram_size"] = no_repeat_ngram_size
     rows = []
     for card in load_eval_cards(cards_path):
         sample_id = str(card.get("id", ""))
@@ -157,6 +181,10 @@ def _build_worker_command(args: argparse.Namespace) -> list[str]:
     ]
     if args.max_new_tokens is not None:
         command.extend(["--max-new-tokens", str(args.max_new_tokens)])
+    if getattr(args, "repetition_penalty", None) is not None:
+        command.extend(["--repetition-penalty", str(args.repetition_penalty)])
+    if getattr(args, "no_repeat_ngram_size", None) is not None:
+        command.extend(["--no-repeat-ngram-size", str(args.no_repeat_ngram_size)])
     return command
 
 

@@ -121,7 +121,7 @@ def test_run_oom_probe_returns_one_when_any_probe_fails(tmp_path: Path, monkeypa
     assert "cuda_oom" in report.read_text(encoding="utf-8")
 
 
-def test_one_step_probe_snapshot_uses_supplied_sft_dataset(tmp_path: Path, monkeypatch):
+def test_one_step_probe_snapshot_uses_supplied_sft_dataset_name(tmp_path: Path, monkeypatch):
     from scripts import stage2_oom_probe_worker
 
     config = tmp_path / "sft.yaml"
@@ -139,6 +139,7 @@ def test_one_step_probe_snapshot_uses_supplied_sft_dataset(tmp_path: Path, monke
 
     def fake_run(command, **kwargs):
         assert command[0:2] == ["llamafactory-cli", "train"]
+        assert kwargs["env"]["WANDB_DISABLED"] == "true"
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     monkeypatch.setattr(stage2_oom_probe_worker.subprocess, "run", fake_run)
@@ -156,5 +157,7 @@ def test_one_step_probe_snapshot_uses_supplied_sft_dataset(tmp_path: Path, monke
     snapshot = tmp_path / "logs" / "probe_5" / "training_config_snapshot.yaml"
     snapshot_text = snapshot.read_text(encoding="utf-8")
     assert exit_code == 0
-    assert str(sft_dataset) in snapshot_text
+    assert "dataset: sft_chapter_v1\n" in snapshot_text
+    assert f"dataset_dir: {sft_dataset.parent}\n" in snapshot_text
+    assert str(sft_dataset) not in snapshot_text
     assert "old_dataset" not in snapshot_text

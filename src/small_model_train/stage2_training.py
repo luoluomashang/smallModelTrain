@@ -8,6 +8,7 @@ summaries, which helps preserve diagnostic evidence when a child fails.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 import time
@@ -146,6 +147,7 @@ def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env=_noninteractive_training_env(),
         )
         _append_gpu_sample(run, "during_subprocess")
         stdout_thread = _start_stream_thread(
@@ -205,6 +207,12 @@ def run_training_subprocess(run: dict[str, Any]) -> dict[str, Any]:
 
 def _command_text(command: list[str]) -> str:
     return subprocess.list2cmdline([str(part) for part in command])
+
+
+def _noninteractive_training_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["WANDB_DISABLED"] = "true"
+    return env
 
 
 def _write_text_log(path: str | Path | None, text: str) -> None:

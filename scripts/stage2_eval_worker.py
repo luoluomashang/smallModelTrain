@@ -21,6 +21,7 @@ from small_model_train.stage2_inference import (
     default_inference_params,
     load_eval_cards,
     render_eval_prompt,
+    sanitize_generated_output,
 )
 
 
@@ -49,11 +50,28 @@ def positive_int(value: str) -> int:
     return parsed
 
 
-def build_inference_params(max_new_tokens: int | None = None) -> dict:
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive float")
+    return parsed
+
+
+def build_inference_params(
+    max_new_tokens: int | None = None,
+    repetition_penalty: float | None = None,
+    no_repeat_ngram_size: int | None = None,
+) -> dict:
     params = default_inference_params()
     if max_new_tokens is not None:
         params = dict(params)
         params["max_new_tokens"] = max_new_tokens
+    if repetition_penalty is not None:
+        params = dict(params)
+        params["repetition_penalty"] = repetition_penalty
+    if no_repeat_ngram_size is not None:
+        params = dict(params)
+        params["no_repeat_ngram_size"] = no_repeat_ngram_size
     return params
 
 
@@ -65,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--model-name", default="sft_v1")
     parser.add_argument("--max-new-tokens", type=positive_int)
+    parser.add_argument("--repetition-penalty", type=positive_float)
+    parser.add_argument("--no-repeat-ngram-size", type=positive_int)
     args = parser.parse_args(argv)
 
     try:
@@ -78,7 +98,11 @@ def main(argv: list[str] | None = None) -> int:
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-    params = build_inference_params(args.max_new_tokens)
+    params = build_inference_params(
+        args.max_new_tokens,
+        args.repetition_penalty,
+        args.no_repeat_ngram_size,
+    )
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -111,12 +135,15 @@ def main(argv: list[str] | None = None) -> int:
             top_p=params["top_p"],
             top_k=params["top_k"],
             repetition_penalty=params["repetition_penalty"],
+            no_repeat_ngram_size=params.get("no_repeat_ngram_size", 0),
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
         )
         prompt_length = inputs["input_ids"].shape[-1]
         new_tokens = generated[0][prompt_length:]
-        output = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+        output = sanitize_generated_output(
+            tokenizer.decode(new_tokens, skip_special_tokens=True)
+        )
         sample_id = str(card.get("id", ""))
         append_generation_row(
             args.output,

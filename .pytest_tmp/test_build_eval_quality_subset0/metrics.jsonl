@@ -1,0 +1,2 @@
+{"id": "a", "failure_types": ["length_short"], "char_count_zh": 300}
+{"id": "b", "failure_types": ["length_short", "outline_leak"], "char_count_zh": 280}

@@ -73,3 +73,36 @@ Stage 4 基础设施闭环已经证明: data -> SFT -> smoke training -> adapter
 - `outputs/sft_smoke/generated.jsonl`
 - `outputs/sft_smoke/metrics.jsonl`
 - `reports/sft_smoke_eval_report.md`
+
+## 2026-06-21 Stage 4.1 Full50 归档
+
+Stage 4.1 full50 control gate 的旧机器 hard gate 曾显示通过，归档为带 targeted retry 的结果，而不是单次 `2560` 全量通过。
+
+后续人工复核撤销该晋级结论。当前状态以 `docs/stage4-1-full50-manual-review.zh.md` 为准：
+
+`blocked_by_eval_schema_mismatch_and_semantic_repetition`
+
+- final report: `reports/stage4_1_quality_eval_full50_merged_2560_rp112_nr4_retry3072.md`
+- archive note: `docs/stage4-1-full50-archive.zh.md`
+- manual review: `docs/stage4-1-full50-manual-review.zh.md`
+- final generated: `outputs/sft_smoke/generated_full50_merged_2560_rp112_nr4_retry3072.jsonl`
+- final metrics: `outputs/sft_smoke/metrics_full50_merged_2560_rp112_nr4_retry3072.jsonl`
+- expected/generated/metrics: `50/50/50`
+- hard gate: `50/50`
+- character count: min `2171`, max `2499`, avg `2443.68`
+- outline leak: none
+- hard failures: none
+- soft findings: `ai_trace: 1`
+
+运行策略：
+
+- baseline full50: `max_new_tokens=2560`, `repetition_penalty=1.12`, `no_repeat_ngram_size=4`; hard gate `44/50`, hard failures all `length_short`。
+- targeted retry: only the six `length_short` rows, `max_new_tokens=3072` with the same repetition controls; hard gate `6/6`。
+
+人工复核发现：
+
+- eval 输入 schema 错位：`data_cards/eval_cards_50.jsonl` 不是章节执行卡，缺少 `style_contract`、`chapter_goal`、`chapter_structure`、`must_include`、`ending_hook` 等字段。
+- 输出存在补字数式语义重复，不是精确 4-gram 重复，因此旧 `repeated_ngram_ratio` 低估风险。
+- 输出仍有 markdown/meta/disclaimer 残留与不自然收尾。
+
+修订决策：Stage 4.1 full50 不能作为下一步 100-sample expansion 的前置证据。应先修复 eval card schema、inference schema guard 和质量 scorer，再重跑 quality subset/full50。500-sample expansion 继续保持 out of scope。

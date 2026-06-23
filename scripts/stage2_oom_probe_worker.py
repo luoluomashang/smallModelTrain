@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -124,7 +125,7 @@ def _probe_one_step_training(args: argparse.Namespace) -> int:
     }
     overrides = {
         **probe_overrides[args.probe],
-        "dataset": str(sft_dataset),
+        "dataset": sft_dataset.stem,
         "dataset_dir": str(sft_dataset.parent),
     }
     log_dir = Path(args.log_dir)
@@ -149,12 +150,19 @@ def _probe_one_step_training(args: argparse.Namespace) -> int:
         capture_output=True,
         check=False,
         text=True,
+        env=_noninteractive_training_env(),
     )
     if result.stdout:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
     if result.stderr:
         print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
     return int(result.returncode)
+
+
+def _noninteractive_training_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["WANDB_DISABLED"] = "true"
+    return env
 
 
 def _load_first_jsonl(path: str | Path) -> dict[str, Any]:

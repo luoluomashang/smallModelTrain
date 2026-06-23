@@ -119,17 +119,12 @@ def test_run_training_subprocess_writes_stderr_and_failed_event(
 
     result = run_training_subprocess(run)
 
-    assert calls == [
-        (
-            ["llamafactory-cli", "train", "config.yaml"],
-            {
-                "stdout": stage2_training.subprocess.PIPE,
-                "stderr": stage2_training.subprocess.PIPE,
-                "text": True,
-                "bufsize": 1,
-            },
-        )
-    ]
+    assert calls[0][0] == ["llamafactory-cli", "train", "config.yaml"]
+    assert calls[0][1]["stdout"] == stage2_training.subprocess.PIPE
+    assert calls[0][1]["stderr"] == stage2_training.subprocess.PIPE
+    assert calls[0][1]["text"] is True
+    assert calls[0][1]["bufsize"] == 1
+    assert calls[0][1]["env"]["WANDB_DISABLED"] == "true"
     assert Path(run["stderr_log"]).read_text(encoding="utf-8") == (
         "RuntimeError: CUDA out of memory"
     )

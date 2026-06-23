@@ -1,0 +1,1 @@
+{"id": "case1", "target_platform": "hybrid_fanqie_qidian", "review_count": 3, "pass_votes": 0, "fail_votes": 3, "blocker_votes": 0, "agent_gate_pass": false, "requires_human_arbitration": false, "issues": ["semantic_repetition", "semantic_repetition", "semantic_repetition"], "reviewers": ["male_genre_payoff", "platform_style_compliance", "readthrough_structure"]}

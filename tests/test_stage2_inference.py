@@ -13,7 +13,9 @@ from small_model_train.stage2_inference import (
     default_inference_params,
     load_eval_cards,
     render_eval_prompt,
+    sanitize_generated_output,
 )
+from small_model_train.text_utils import count_chinese_chars
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -142,6 +144,77 @@ def test_default_inference_params_match_stage2_eval_defaults():
     }
 
 
+def test_sanitize_generated_output_removes_outline_blocks_and_keeps_prose():
+    raw = "\n".join(
+        [
+            "我推开门，雨声从楼道深处涌了进来。",
+            "",
+            "【章节结构】",
+            "- 承接：交代开场状态",
+            "- 加压：制造阻碍",
+            "---",
+            "她没有回头，只把铜钥匙压在掌心。",
+        ]
+    )
+
+    cleaned = sanitize_generated_output(raw)
+
+    assert cleaned == "我推开门，雨声从楼道深处涌了进来。\n\n她没有回头，只把铜钥匙压在掌心。"
+    assert "【" not in cleaned
+    assert "章节结构" not in cleaned
+    assert "承接" not in cleaned
+
+
+def test_sanitize_generated_output_drops_inline_meta_directives():
+    raw = "\n".join(
+        [
+            "请严格遵循【风格契约】，只输出正文。",
+            "（请根据以上所有信息，生成完整章节正文。）",
+            "门后的呼吸声停了一下，像有人把手按在了木板另一侧。",
+        ]
+    )
+
+    cleaned = sanitize_generated_output(raw)
+
+    assert cleaned == "门后的呼吸声停了一下，像有人把手按在了木板另一侧。"
+
+
+def test_sanitize_generated_output_drops_writing_meta_language():
+    raw = "\n".join(
+        [
+            "第一人称视角，现实主义语言风格，禁止抒情。",
+            "雨水顺着门缝流进来，我听见里面有人轻轻咳了一声。",
+        ]
+    )
+
+    cleaned = sanitize_generated_output(raw)
+
+    assert cleaned == "雨水顺着门缝流进来，我听见里面有人轻轻咳了一声。"
+
+
+def test_sanitize_generated_output_drops_body_marker_variants():
+    raw = "\n".join(
+        [
+            "以下是正文：",
+            "【正文开始",
+            "门轴响了一下，我把手里的钥匙攥紧。",
+        ]
+    )
+
+    cleaned = sanitize_generated_output(raw)
+
+    assert cleaned == "门轴响了一下，我把手里的钥匙攥紧。"
+
+
+def test_sanitize_generated_output_caps_chinese_chars_at_sentence_boundary():
+    raw = ("我" * 2400) + "。" + ("他" * 200) + "。"
+
+    cleaned = sanitize_generated_output(raw)
+
+    assert count_chinese_chars(cleaned) == 2400
+    assert cleaned.endswith("。")
+
+
 def test_dry_run_cli_writes_generation_rows_without_subprocess(
     tmp_path: Path,
     monkeypatch,
@@ -213,6 +286,72 @@ def test_dry_run_cli_records_max_new_tokens_override(
     assert _read_jsonl(output_path)[0]["params"] == params
 
 
+def test_dry_run_cli_records_repetition_penalty_override(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import run_eval_inference
+
+    cards_path = tmp_path / "cards.jsonl"
+    output_path = tmp_path / "generated.jsonl"
+    write_jsonl(cards_path, [_card("eval-1")])
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("dry-run must not call subprocess.run")
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "run", fail_run)
+
+    exit_code = run_eval_inference.main(
+        [
+            "--cards",
+            str(cards_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+            "--repetition-penalty",
+            "1.12",
+        ]
+    )
+
+    params = default_inference_params()
+    params["repetition_penalty"] = 1.12
+    assert exit_code == 0
+    assert _read_jsonl(output_path)[0]["params"] == params
+
+
+def test_dry_run_cli_records_no_repeat_ngram_size_override(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import run_eval_inference
+
+    cards_path = tmp_path / "cards.jsonl"
+    output_path = tmp_path / "generated.jsonl"
+    write_jsonl(cards_path, [_card("eval-1")])
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("dry-run must not call subprocess.run")
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "run", fail_run)
+
+    exit_code = run_eval_inference.main(
+        [
+            "--cards",
+            str(cards_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+            "--no-repeat-ngram-size",
+            "8",
+        ]
+    )
+
+    params = default_inference_params()
+    params["no_repeat_ngram_size"] = 8
+    assert exit_code == 0
+    assert _read_jsonl(output_path)[0]["params"] == params
+
+
 def test_dry_run_cli_rejects_non_positive_max_new_tokens(
     tmp_path: Path,
     capsys,
@@ -234,6 +373,29 @@ def test_dry_run_cli_rejects_non_positive_max_new_tokens(
 
     assert exc_info.value.code == 2
     assert "must be a positive integer" in capsys.readouterr().err
+
+
+def test_dry_run_cli_rejects_non_positive_repetition_penalty(
+    tmp_path: Path,
+    capsys,
+):
+    from scripts import run_eval_inference
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_eval_inference.main(
+            [
+                "--cards",
+                str(tmp_path / "cards.jsonl"),
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--dry-run",
+                "--repetition-penalty",
+                "0",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "must be a positive float" in capsys.readouterr().err
 
 
 def test_dry_run_cli_fails_for_missing_cards_without_subprocess(
@@ -345,11 +507,13 @@ def test_worker_progress_message_includes_count_total_and_id(capsys):
 def test_worker_inference_params_default_and_override():
     from scripts.stage2_eval_worker import build_inference_params
 
-    assert build_inference_params(None) == default_inference_params()
+    assert build_inference_params(None, None, None) == default_inference_params()
 
-    params = build_inference_params(64)
+    params = build_inference_params(64, 1.12, 8)
     expected = default_inference_params()
     expected["max_new_tokens"] = 64
+    expected["repetition_penalty"] = 1.12
+    expected["no_repeat_ngram_size"] = 8
     assert params == expected
     assert default_inference_params()["max_new_tokens"] == 5120
 
@@ -369,6 +533,55 @@ def test_worker_cli_rejects_non_positive_max_new_tokens(tmp_path: Path, capsys):
                 "--output",
                 str(tmp_path / "generated.jsonl"),
                 "--max-new-tokens",
+                "0",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "must be a positive integer" in capsys.readouterr().err
+
+
+def test_worker_cli_rejects_non_positive_repetition_penalty(tmp_path: Path, capsys):
+    from scripts import stage2_eval_worker
+
+    with pytest.raises(SystemExit) as exc_info:
+        stage2_eval_worker.main(
+            [
+                "--cards",
+                str(tmp_path / "cards.jsonl"),
+                "--model-dir",
+                "model",
+                "--adapter-dir",
+                "adapter",
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--repetition-penalty",
+                "0",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "must be a positive float" in capsys.readouterr().err
+
+
+def test_worker_cli_rejects_non_positive_no_repeat_ngram_size(
+    tmp_path: Path,
+    capsys,
+):
+    from scripts import stage2_eval_worker
+
+    with pytest.raises(SystemExit) as exc_info:
+        stage2_eval_worker.main(
+            [
+                "--cards",
+                str(tmp_path / "cards.jsonl"),
+                "--model-dir",
+                "model",
+                "--adapter-dir",
+                "adapter",
+                "--output",
+                str(tmp_path / "generated.jsonl"),
+                "--no-repeat-ngram-size",
                 "0",
             ]
         )
@@ -472,6 +685,47 @@ def test_build_worker_command_includes_max_new_tokens_when_supplied(tmp_path: Pa
     command = run_eval_inference._build_worker_command(args)
 
     assert command[-2:] == ["--max-new-tokens", "96"]
+
+
+def test_build_worker_command_includes_repetition_penalty_when_supplied(
+    tmp_path: Path,
+):
+    from scripts import run_eval_inference
+
+    args = argparse.Namespace(
+        cards=tmp_path / "cards.jsonl",
+        model_dir="model",
+        adapter_dir="adapter",
+        output=tmp_path / "generated.jsonl",
+        model_name="sft_v1",
+        max_new_tokens=None,
+        repetition_penalty=1.12,
+    )
+
+    command = run_eval_inference._build_worker_command(args)
+
+    assert command[-2:] == ["--repetition-penalty", "1.12"]
+
+
+def test_build_worker_command_includes_no_repeat_ngram_size_when_supplied(
+    tmp_path: Path,
+):
+    from scripts import run_eval_inference
+
+    args = argparse.Namespace(
+        cards=tmp_path / "cards.jsonl",
+        model_dir="model",
+        adapter_dir="adapter",
+        output=tmp_path / "generated.jsonl",
+        model_name="sft_v1",
+        max_new_tokens=None,
+        repetition_penalty=None,
+        no_repeat_ngram_size=8,
+    )
+
+    command = run_eval_inference._build_worker_command(args)
+
+    assert command[-2:] == ["--no-repeat-ngram-size", "8"]
 
 
 def test_non_dry_run_failure_writes_logs_events_and_classification(
