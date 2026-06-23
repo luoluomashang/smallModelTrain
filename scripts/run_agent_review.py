@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import re
 import sys
 from pathlib import Path
@@ -33,19 +34,41 @@ def _read_required_jsonl(path: str | Path, label: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _missing_ids(expected_ids: list[str], rows: list[dict[str, Any]]) -> list[str]:
-    row_ids = {row.get("id") for row in rows if isinstance(row, dict)}
-    return [expected_id for expected_id in expected_ids if expected_id not in row_ids]
+def _row_ids(rows: list[dict[str, Any]]) -> list[str]:
+    return [str(row.get("id", "")) for row in rows if isinstance(row, dict)]
 
 
-def _validate_required_ids(
+def _missing_ids(expected_ids: list[str], row_ids: list[str]) -> list[str]:
+    present = set(row_ids)
+    return [expected_id for expected_id in expected_ids if expected_id not in present]
+
+
+def _duplicate_ids(row_ids: list[str]) -> list[str]:
+    counts = Counter(row_id for row_id in row_ids if row_id)
+    return sorted(row_id for row_id, count in counts.items() if count > 1)
+
+
+def _unexpected_ids(expected_ids: list[str], row_ids: list[str]) -> list[str]:
+    expected = set(expected_ids)
+    return sorted({row_id for row_id in row_ids if row_id and row_id not in expected})
+
+
+def _validate_exact_ids(
     label: str,
     expected_ids: list[str],
     rows: list[dict[str, Any]],
 ) -> None:
-    missing = _missing_ids(expected_ids, rows)
+    row_ids = _row_ids(rows)
+    missing = _missing_ids(expected_ids, row_ids)
     if missing:
         raise ValueError(f"{label} missing rows for card ids: {', '.join(missing)}")
+    duplicates = _duplicate_ids(row_ids)
+    if duplicates:
+        raise ValueError(f"{label} duplicate rows for card ids: {', '.join(duplicates)}")
+    unexpected = _unexpected_ids(expected_ids, row_ids)
+    if unexpected:
+        raise ValueError(f"{label} unexpected rows for card ids: {', '.join(unexpected)}")
+
 
 def _safe_issue_labels(values: Any) -> list[str]:
     if not isinstance(values, list):
@@ -121,8 +144,8 @@ def main() -> int:
         expected_ids = [card["id"] for card in cards]
         outputs = _read_required_jsonl(args.outputs, "outputs")
         metrics = _read_required_jsonl(args.metrics, "metrics")
-        _validate_required_ids("outputs", expected_ids, outputs)
-        _validate_required_ids("metrics", expected_ids, metrics)
+        _validate_exact_ids("outputs", expected_ids, outputs)
+        _validate_exact_ids("metrics", expected_ids, metrics)
 
         if args.reviews_import:
             review_rows = read_jsonl(args.reviews_import)

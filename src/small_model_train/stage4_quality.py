@@ -316,11 +316,11 @@ def _combined_decision(
 
 
 def _quality_decision(summary: dict[str, Any]) -> str:
-    if summary["generated_rows"] < summary["expected_rows"]:
+    if summary["generated_rows"] != summary["expected_rows"]:
         return "blocked_incomplete_generation"
     if summary.get("missing_generated_ids") or summary.get("duplicate_generated_ids"):
         return "blocked_incomplete_generation"
-    if summary["metrics_rows"] < summary["expected_rows"]:
+    if summary["metrics_rows"] != summary["expected_rows"]:
         return "blocked_incomplete_metrics"
     if summary.get("missing_metric_ids") or summary.get("duplicate_metric_ids"):
         return "blocked_incomplete_metrics"

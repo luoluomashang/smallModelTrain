@@ -113,6 +113,69 @@ def test_summarize_quality_budget_blocks_duplicate_rows_with_missing_ids():
     assert summary["duplicate_metric_ids"] == ["a"]
     assert summary["decision"] == "blocked_incomplete_generation"
 
+def test_summarize_quality_budget_blocks_extra_generated_rows_with_agent_summary():
+    summary = summarize_quality_budget(
+        cards=[_card("a"), _card("b")],
+        generated_rows=[
+            {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}},
+            {"id": "b", "output": "正文", "params": {"max_new_tokens": 1024}},
+            {"id": "stale", "output": "旧批次正文", "params": {"max_new_tokens": 1024}},
+        ],
+        metric_rows=[
+            {"id": "a", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+            {"id": "b", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+        ],
+        agent_summary={
+            "target_platform": "hybrid_fanqie_qidian",
+            "rubric_version": "male_webnovel_v1",
+            "expected_rows": 6,
+            "reviewed_rows": 6,
+            "reviewed_card_ids": ["a", "b"],
+            "missing_review_ids": [],
+            "agent_gate_pass": True,
+            "blocked_ids": [],
+            "arbitration_ids": [],
+            "issue_counts": {},
+            "decision": "ready_for_next_expansion",
+            "malformed_review_rows": [],
+        },
+    )
+
+    assert summary["generated_rows"] == 3
+    assert summary["decision"] == "blocked_incomplete_generation"
+
+
+def test_summarize_quality_budget_blocks_extra_metric_rows_with_agent_summary():
+    summary = summarize_quality_budget(
+        cards=[_card("a"), _card("b")],
+        generated_rows=[
+            {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}},
+            {"id": "b", "output": "正文", "params": {"max_new_tokens": 1024}},
+        ],
+        metric_rows=[
+            {"id": "a", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+            {"id": "b", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+            {"id": "stale", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+        ],
+        agent_summary={
+            "target_platform": "hybrid_fanqie_qidian",
+            "rubric_version": "male_webnovel_v1",
+            "expected_rows": 6,
+            "reviewed_rows": 6,
+            "reviewed_card_ids": ["a", "b"],
+            "missing_review_ids": [],
+            "agent_gate_pass": True,
+            "blocked_ids": [],
+            "arbitration_ids": [],
+            "issue_counts": {},
+            "decision": "ready_for_next_expansion",
+            "malformed_review_rows": [],
+        },
+    )
+
+    assert summary["metrics_rows"] == 3
+    assert summary["decision"] == "blocked_incomplete_metrics"
+
 def test_render_quality_budget_report_does_not_include_generated_text():
     cards = [_card("a")]
     generated = [

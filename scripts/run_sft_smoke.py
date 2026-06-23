@@ -26,7 +26,7 @@ def main() -> int:
     parser.add_argument("--output-dir", default="outputs/sft_smoke")
     parser.add_argument("--log-dir", default="logs/training")
     parser.add_argument("--sft-dataset", default="data_sft/sft_chapter_v1.jsonl")
-    parser.add_argument("--eval-cards", default="data_cards/eval_cards_50.jsonl")
+    parser.add_argument("--eval-cards", default="data_cards/eval_execution_cards_50.jsonl")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
