@@ -62,7 +62,7 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 ```powershell
 python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507 --report reports/model_check_report.md
 python scripts/check_training_env.py --report reports/training_env_report.md
-python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
+python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --run-smoke-dry-run
 ```
 
 真实训练会占用显卡资源。第一次操作前，请先读 [零基础使用手册](docs/zero-start.zh.md) 和 [常见问题排查](docs/troubleshooting.zh.md)。

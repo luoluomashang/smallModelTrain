@@ -18,7 +18,7 @@
 
 按这个顺序读：
 
-1. [零基础使用手册](zero-start.zh.md) 的“最安全的第一次运行”和“常用流程”
+1. [零基础使用手册](zero-start.zh.md) 的“第一次安全检查”和后续数据准备、训练前检查章节
 2. [第三阶段真实数据准备指南](stage3-data-bring-up-guide.zh.md)
 3. [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md)
 4. [Stage 4.1 Quality Eval Hardening 指南](stage4-1-quality-eval-guide.zh.md)

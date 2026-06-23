@@ -253,6 +253,8 @@ python scripts/run_agent_review.py --cards data_cards/eval_cards_quality_subset.
 python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --agent-summary outputs/sft_smoke/agent_review_summary_subset_1024.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
 ```
 
+`run_agent_review.py` 的退出码也要读懂：退出 `0` 表示审阅门通过；退出 `1` 也可能是正常的质量阻断结果，例如 `blocked_by_agent_review` 或需要人工仲裁。只要 reviews、votes、summary、report 已经写出，就继续阅读审阅报告，并把 `agent_review_summary_subset_1024.jsonl` 交给最终质量报告命令；不要把所有退出 `1` 都当成产物缺失。
+
 输出：
 
 - `data_cards/eval_cards_quality_subset.jsonl`
