@@ -12,6 +12,27 @@ from typing import Any
 
 
 OUTLINE_MARKERS = ("【", "】", "章节结构", "以下是正文")
+AGENT_REVIEW_DECISIONS = {
+    "ready_for_human_spot_check",
+    "ready_for_next_expansion",
+    "blocked_by_agent_review",
+    "blocked_by_human_arbitration",
+    "blocked_incomplete_agent_review",
+    "rules_pass_agent_pending",
+}
+REQUIRED_AGENT_SUMMARY_FIELDS = (
+    "target_platform",
+    "rubric_version",
+    "expected_rows",
+    "reviewed_rows",
+    "missing_review_ids",
+    "agent_gate_pass",
+    "blocked_ids",
+    "arbitration_ids",
+    "issue_counts",
+    "decision",
+    "malformed_review_rows",
+)
 
 
 def select_quality_subset(
@@ -44,10 +65,67 @@ def detect_outline_markers(text: str) -> list[str]:
     return [marker for marker in OUTLINE_MARKERS if marker in text]
 
 
+def validate_agent_summary(agent_summary: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(agent_summary, dict):
+        raise ValueError("agent summary must be a dict")
+
+    missing = [
+        field
+        for field in REQUIRED_AGENT_SUMMARY_FIELDS
+        if field not in agent_summary or agent_summary.get(field) in (None, "")
+    ]
+    if missing:
+        raise ValueError("agent summary missing fields: " + ", ".join(sorted(missing)))
+
+    decision = agent_summary["decision"]
+    if not isinstance(decision, str):
+        raise ValueError("agent summary decision must be a string")
+    if decision not in AGENT_REVIEW_DECISIONS:
+        raise ValueError(f"unknown agent summary decision: {decision}")
+
+    for field in ("target_platform", "rubric_version"):
+        if not isinstance(agent_summary[field], str):
+            raise ValueError(f"agent summary {field} must be a string")
+
+    for field in ("expected_rows", "reviewed_rows"):
+        value = agent_summary[field]
+        if type(value) is not int or value < 0:
+            raise ValueError(f"agent summary {field} must be a non-negative integer")
+
+    if type(agent_summary["agent_gate_pass"]) is not bool:
+        raise ValueError("agent summary agent_gate_pass must be a boolean")
+
+    for field in (
+        "missing_review_ids",
+        "blocked_ids",
+        "arbitration_ids",
+        "malformed_review_rows",
+    ):
+        if not isinstance(agent_summary[field], list):
+            raise ValueError(f"agent summary {field} must be a list")
+
+    if not isinstance(agent_summary["issue_counts"], dict):
+        raise ValueError("agent summary issue_counts must be a dict")
+
+    ready_decisions = {"ready_for_human_spot_check", "ready_for_next_expansion"}
+    has_blocking_state = (
+        not agent_summary["agent_gate_pass"]
+        or bool(agent_summary["missing_review_ids"])
+        or bool(agent_summary["blocked_ids"])
+        or bool(agent_summary["arbitration_ids"])
+        or bool(agent_summary["malformed_review_rows"])
+    )
+    if decision in ready_decisions and has_blocking_state:
+        raise ValueError("agent summary ready decision conflicts with blocking fields")
+
+    return agent_summary
+
+
 def summarize_quality_budget(
     cards: list[dict[str, Any]],
     generated_rows: list[dict[str, Any]],
     metric_rows: list[dict[str, Any]],
+    agent_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     expected_rows = len(cards)
     generated_by_id = {str(row.get("id", "")): row for row in generated_rows}
@@ -109,7 +187,11 @@ def summarize_quality_budget(
         "failure_counts": dict(sorted(failure_counts.items())),
         "outline_leaks": outline_leaks,
     }
-    summary["decision"] = _quality_decision(summary)
+    rule_decision = _quality_decision(summary)
+    if agent_summary is not None:
+        agent_summary = validate_agent_summary(agent_summary)
+        summary["agent_review"] = agent_summary
+    summary["decision"] = _combined_decision(rule_decision, agent_summary)
     summary["recommendation"] = _recommendation(summary["decision"])
     return summary
 
@@ -121,6 +203,9 @@ def render_quality_budget_report(title: str, summary: dict[str, Any]) -> str:
         "## Decision",
         f"- {summary['decision']}",
         f"- {summary['recommendation']}",
+        "",
+        "## Agent Review",
+        *_agent_review_lines(summary.get("agent_review")),
         "",
         "## Rows",
         f"- expected: {summary['expected_rows']}",
@@ -173,6 +258,39 @@ def render_quality_budget_report(title: str, summary: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _agent_review_lines(agent_review: dict[str, Any] | None) -> list[str]:
+    if agent_review is None:
+        return [
+            "- decision: rules_pass_agent_pending",
+            "- agent_gate_pass: pending",
+            "- blocked_ids: none",
+            "- arbitration_ids: none",
+        ]
+
+    blocked_ids = [str(sample_id) for sample_id in agent_review.get("blocked_ids", [])]
+    arbitration_ids = [
+        str(sample_id) for sample_id in agent_review.get("arbitration_ids", [])
+    ]
+    return [
+        f"- decision: {agent_review.get('decision', 'rules_pass_agent_pending')}",
+        f"- agent_gate_pass: {agent_review.get('agent_gate_pass', 'unknown')}",
+        "- blocked_ids: " + (", ".join(blocked_ids) if blocked_ids else "none"),
+        "- arbitration_ids: "
+        + (", ".join(arbitration_ids) if arbitration_ids else "none"),
+    ]
+
+
+def _combined_decision(
+    rule_decision: str,
+    agent_summary: dict[str, Any] | None,
+) -> str:
+    if rule_decision != "ready_for_full_50_long_eval":
+        return rule_decision
+    if agent_summary is None:
+        return "rules_pass_agent_pending"
+    return str(agent_summary.get("decision", "rules_pass_agent_pending"))
+
+
 def _quality_decision(summary: dict[str, Any]) -> str:
     if summary["generated_rows"] < summary["expected_rows"]:
         return "blocked_incomplete_generation"
@@ -199,5 +317,11 @@ def _recommendation(decision: str) -> str:
         "blocked_outline_leak": "抽查 outline leak 样本，优先修 prompt/output 格式。",
         "ready_for_full_50_long_eval": "可以进入 full 50 long eval，不要直接扩到 100。",
         "needs_quality_review": "需要人工复核失败类型后再决定下一步。",
+        "ready_for_human_spot_check": "规则门和 agent gate 已通过，可进入人工抽查。",
+        "ready_for_next_expansion": "规则门和 agent gate 已通过，可进入下一轮扩量。",
+        "blocked_by_agent_review": "先处理 agent review 标记的质量问题，再进入下一步。",
+        "blocked_by_human_arbitration": "等待人工仲裁样本处理后再继续。",
+        "blocked_incomplete_agent_review": "补齐 agent review 结果后再判断扩量。",
+        "rules_pass_agent_pending": "规则门已通过，等待 agent review 后再继续。",
     }
     return recommendations[decision]
