@@ -12,6 +12,7 @@ data_raw/novels/
   -> style_contract.md + style_profile.json
   -> data_cards/chapter_cards.jsonl
   -> data_sft/sft_chapter_v1.jsonl
+  -> data_cards/eval_execution_cards_50.jsonl
   -> reports/stage3_data_readiness_report.md
   -> outputs/sft_smoke/
   -> outputs/sft_smoke/generated.jsonl
@@ -19,6 +20,8 @@ data_raw/novels/
   -> reports/sft_smoke_eval_report.md
   -> reports/stage4_1_quality_eval_budget_report.md
 ```
+
+`data_cards/eval_execution_cards_50.jsonl` 是 Stage 4 使用的更严格执行卡产物。它不是 `split_train_eval.py` 自动生成的，需要基于固定评测集单独准备。
 
 ## 1. 原始小说到原始章节
 
@@ -63,7 +66,7 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 - `data_clean/chapters_split.jsonl`
 - `data_cards/eval_cards_50.jsonl`
 
-成功标志：评测集数量符合 `--eval-count`，训练数据仍然保留在 split 文件里。
+成功标志：当输入章节数量不少于 `--eval-count` 时，评测集数量符合 `--eval-count`；小语料可能少于这个数量。训练数据仍然保留在 split 文件里。
 
 ## 4. 生成风格契约
 
@@ -116,6 +119,18 @@ python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --cha
 
 成功标志：SFT 数据可以被训练脚本引用。
 
+### Stage 4 前置：准备执行卡
+
+`data_cards/eval_cards_50.jsonl` 还不足以进入 Stage 4 执行和评测。你需要从固定评测集手动或用 Agent 准备 `data_cards/eval_execution_cards_50.jsonl`，并补齐执行卡字段：`id`、`target_platform`、`genre_tags`、`style_contract`、`chapter_goal`、`chapter_structure`、`conflict_beat`、`payoff_beat`、`must_include`、`must_not_include`、`ending_hook`、`target_word_count`。
+
+验证命令：
+
+```powershell
+python scripts/run_eval_inference.py --cards data_cards/eval_execution_cards_50.jsonl --output outputs/sft_smoke/generated_dry_run.jsonl --model-name sft_smoke --dry-run
+```
+
+成功标志：命令退出码为 0，并写出 dry-run 生成行。如果失败，先修正 `data_cards/eval_execution_cards_50.jsonl`，不要继续训练。
+
 ## 7. 训练前 readiness
 
 输入：
@@ -124,18 +139,18 @@ python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --cha
 - `data_cards/chapter_cards.jsonl`
 - `data_cards/eval_cards_50.jsonl`
 - `data_sft/sft_chapter_v1.jsonl`
-- `configs/sft_qlora_qwen3_4b.yaml`
+- `configs/sft_qlora_qwen3_4b_smoke_6144.yaml`
 - `E:\models\Qwen3-4B-Instruct-2507`
 
 命令：
 
 ```powershell
-python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
+python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --run-smoke-dry-run
 ```
 
 输出：`reports/stage3_data_readiness_report.md`
 
-成功标志：报告给出可以进入 smoke training 的状态。
+成功标志：报告给出可以进入 smoke training 的状态，并且 smoke dry-run 使用的是 `configs/sft_qlora_qwen3_4b_smoke_6144.yaml`。
 
 ## 8. 模型和环境检查
 
@@ -166,6 +181,8 @@ python scripts/check_training_env.py --report reports/training_env_report.md
 - `data_sft/sft_chapter_v1.jsonl`
 - `data_cards/eval_execution_cards_50.jsonl`
 - `E:\models\Qwen3-4B-Instruct-2507`
+
+如果前面的 readiness 没有覆盖同一个 smoke 配置，先用 `python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_execution_cards_50.jsonl --dry-run` 做一次同配置 dry-run。
 
 命令：
 
@@ -232,7 +249,8 @@ python scripts/evaluate_outputs.py --scores outputs/sft_smoke/metrics.jsonl --re
 python scripts/build_eval_quality_subset.py --cards data_cards/eval_execution_cards_50.jsonl --metrics outputs/sft_smoke/metrics.jsonl --output data_cards/eval_cards_quality_subset.jsonl --count 8
 python scripts/run_eval_inference.py --cards data_cards/eval_cards_quality_subset.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated_subset_1024.jsonl --model-name sft_smoke_subset_1024 --max-new-tokens 1024
 python scripts/score_outputs.py --cards data_cards/eval_cards_quality_subset.jsonl --outputs outputs/sft_smoke/generated_subset_1024.jsonl --output outputs/sft_smoke/metrics_subset_1024.jsonl
-python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
+python scripts/run_agent_review.py --cards data_cards/eval_cards_quality_subset.jsonl --outputs outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --target-platform hybrid_fanqie_qidian --backend mock --output outputs/sft_smoke/agent_reviews_subset_1024.jsonl --votes-output outputs/sft_smoke/agent_review_votes_subset_1024.jsonl --summary-output outputs/sft_smoke/agent_review_summary_subset_1024.jsonl --report reports/stage4_1_agent_review_report.md --title "Stage 4.1 Agent Review Report"
+python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --agent-summary outputs/sft_smoke/agent_review_summary_subset_1024.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
 ```
 
 输出：
@@ -240,9 +258,13 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - `data_cards/eval_cards_quality_subset.jsonl`
 - `outputs/sft_smoke/generated_subset_1024.jsonl`
 - `outputs/sft_smoke/metrics_subset_1024.jsonl`
+- `outputs/sft_smoke/agent_reviews_subset_1024.jsonl`
+- `outputs/sft_smoke/agent_review_votes_subset_1024.jsonl`
+- `outputs/sft_smoke/agent_review_summary_subset_1024.jsonl`
+- `reports/stage4_1_agent_review_report.md`
 - `reports/stage4_1_quality_eval_budget_report.md`
 
-成功标志：报告说明是否通过质量门槛，而不是只看命令有没有跑完。
+成功标志：最终报告同时结合规则预算和 agent review。若没有 `outputs/sft_smoke/agent_review_summary_subset_1024.jsonl`，它只是 rule-only 预算报告，不是完整 review gate。
 
 ## 阶段边界
 

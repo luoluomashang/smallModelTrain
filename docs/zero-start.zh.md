@@ -104,7 +104,7 @@ python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --cha
 数据 readiness：
 
 ```powershell
-python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
+python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --run-smoke-dry-run
 ```
 
 模型检查：
@@ -125,6 +125,18 @@ python scripts/check_training_env.py --report reports/training_env_report.md
 - `reports/model_check_report.md`
 - `reports/training_env_report.md`
 
+## 准备 Stage 4 执行卡
+
+`data_cards/eval_execution_cards_50.jsonl` 不是前面入门数据准备命令自动生成的文件。它需要基于固定评测样本手动或用 Agent 准备，并包含执行字段：`id`、`target_platform`、`genre_tags`、`style_contract`、`chapter_goal`、`chapter_structure`、`conflict_beat`、`payoff_beat`、`must_include`、`must_not_include`、`ending_hook`、`target_word_count`。
+
+训练前先验证执行卡：
+
+```powershell
+python scripts/run_eval_inference.py --cards data_cards/eval_execution_cards_50.jsonl --output outputs/sft_smoke/generated_dry_run.jsonl --model-name sft_smoke --dry-run
+```
+
+如果命令失败，先按 [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md) 或当前 Stage 4 数据准备路径修正执行卡，不要继续训练。
+
 ## 什么是 dry-run
 
 Dry-run 是试运行。它用来确认路径、参数、配置和即将执行的命令是否合理。它通常不会真正训练模型。
@@ -134,7 +146,7 @@ Dry-run 是试运行。它用来确认路径、参数、配置和即将执行的
 示例：
 
 ```powershell
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.jsonl --dry-run
+python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_execution_cards_50.jsonl --dry-run
 ```
 
 ## 什么是真实训练
@@ -142,6 +154,14 @@ python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.
 真实训练会占用显卡和较长时间。不要在 readiness、模型检查、环境检查失败时硬跑。
 
 下面的真实训练命令同样使用 `data_cards/eval_execution_cards_50.jsonl`。它不是前面入门数据准备命令自动生成的文件；如果缺失，先按 [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md) 或当前 Stage 4 数据准备路径处理，不要直接开训。
+
+真实 GPU 训练前检查清单：
+
+- `data_cards/eval_execution_cards_50.jsonl` 已存在，且 `run_eval_inference.py --dry-run` 验证通过。
+- 已读 `reports/stage3_data_readiness_report.md`。
+- `reports/model_check_report.md` 通过。
+- `reports/training_env_report.md` 没有阻断项。
+- `configs/sft_qlora_qwen3_4b_smoke_6144.yaml` 对应的 smoke dry-run 已通过。
 
 Smoke training 示例：
 
@@ -151,9 +171,14 @@ python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.y
 
 ## 训练后看哪里
 
+训练和 adapter 检查会产生：
+
 - Adapter：`outputs/sft_smoke/`
 - 训练日志：`logs/training/`
 - Adapter 检查报告：`reports/sft_smoke_report.md`
+
+后续 eval 命令会产生：
+
 - 生成结果：`outputs/sft_smoke/generated.jsonl`
 - 评分结果：`outputs/sft_smoke/metrics.jsonl`
 - 评测报告：`reports/sft_smoke_eval_report.md`
