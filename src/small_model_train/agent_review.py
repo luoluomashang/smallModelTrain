@@ -157,6 +157,7 @@ def aggregate_agent_reviews(
         "rubric_version": rubric_version,
         "expected_rows": len(expected_ids) * len(REVIEWERS),
         "reviewed_rows": sum(vote["review_count"] for vote in votes),
+        "reviewed_card_ids": list(expected_ids),
         "missing_review_ids": missing_review_ids,
         "agent_gate_pass": (
             not malformed_review_rows
@@ -203,6 +204,9 @@ def render_agent_review_report(
             "## Missing Review IDs",
             _format_id_list(summary["missing_review_ids"]),
             "",
+            "## Malformed Review Rows",
+            _format_malformed_rows(summary.get("malformed_review_rows", [])),
+            "",
             "## Blocked Samples",
             _format_id_list(summary["blocked_ids"]),
             "",
@@ -222,6 +226,17 @@ def render_agent_review_report(
         )
 
     return "\n".join(lines) + "\n"
+
+
+def _format_malformed_rows(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "- none"
+    lines = []
+    for row in rows:
+        row_number = row.get("row_number", "unknown")
+        error = row.get("error", "unknown error")
+        lines.append(f"- row {row_number}: {error}")
+    return "\n".join(lines)
 
 
 def _format_id_list(values: list[str]) -> str:

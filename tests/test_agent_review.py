@@ -15,6 +15,7 @@ SUMMARY_KEYS = {
     "rubric_version",
     "expected_rows",
     "reviewed_rows",
+    "reviewed_card_ids",
     "missing_review_ids",
     "agent_gate_pass",
     "blocked_ids",
@@ -129,6 +130,7 @@ def test_aggregate_agent_reviews_passes_two_of_three_with_spec_schema():
     assert set(summary) == SUMMARY_KEYS
     assert summary["expected_rows"] == 3
     assert summary["reviewed_rows"] == 3
+    assert summary["reviewed_card_ids"] == ["case1"]
     assert summary["agent_gate_pass"] is True
     assert summary["blocked_ids"] == []
     assert summary["arbitration_ids"] == []
@@ -371,6 +373,18 @@ def test_render_agent_review_report_omits_unsafe_issue_text(unsafe_issue: str):
     assert unsafe_issue not in report
     assert "generated evidence note" not in report
 
+
+def test_render_agent_review_report_preserves_malformed_row_errors():
+    rows = [
+        None,
+        _review("case1", "readthrough_structure", True),
+    ]
+    summary, votes = _aggregate(rows)
+
+    report = render_agent_review_report("Agent Review", summary, votes)
+
+    assert "Malformed Review Rows" in report
+    assert "row 1: review row must be a dict" in report
 
 def test_render_agent_review_report_includes_gate_and_missing_review_ids():
     rows = [_review("case1", "readthrough_structure", True)]

@@ -36,7 +36,7 @@ def positive_int(value: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cards", default="data_cards/eval_cards_50.jsonl")
+    parser.add_argument("--cards", default="data_cards/eval_execution_cards_50.jsonl")
     parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR)
     parser.add_argument("--adapter-dir", default="outputs/sft_v1")
     parser.add_argument("--output", default="outputs/sft_v1/generated.jsonl")

@@ -137,6 +137,7 @@ def test_render_quality_budget_report_includes_agent_review_summary():
             "rubric_version": "male_webnovel_v1",
             "expected_rows": 3,
             "reviewed_rows": 3,
+            "reviewed_card_ids": ["a"],
             "missing_review_ids": [],
             "agent_gate_pass": True,
             "blocked_ids": [],
@@ -174,6 +175,7 @@ def test_summarize_quality_budget_rejects_invalid_agent_review_summary():
                 "rubric_version": "male_webnovel_v1",
                 "expected_rows": 3,
                 "reviewed_rows": 3,
+                "reviewed_card_ids": ["a"],
                 "missing_review_ids": [],
                 "agent_gate_pass": True,
                 "blocked_ids": [],
@@ -202,8 +204,9 @@ def test_summarize_quality_budget_accepts_pending_agent_review_summary():
         agent_summary={
             "target_platform": "hybrid_fanqie_qidian",
             "rubric_version": "male_webnovel_v1",
-            "expected_rows": 0,
+            "expected_rows": 3,
             "reviewed_rows": 0,
+            "reviewed_card_ids": ["a"],
             "missing_review_ids": [],
             "agent_gate_pass": False,
             "blocked_ids": [],
@@ -215,6 +218,38 @@ def test_summarize_quality_budget_accepts_pending_agent_review_summary():
     )
 
     assert summary["decision"] == "rules_pass_agent_pending"
+
+
+def test_summarize_quality_budget_rejects_stale_agent_summary_batch():
+    with pytest.raises(ValueError, match="card ids mismatch"):
+        summarize_quality_budget(
+            cards=[_card("a")],
+            generated_rows=[
+                {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}}
+            ],
+            metric_rows=[
+                {
+                    "id": "a",
+                    "hard_gate_pass": True,
+                    "char_count_zh": 2200,
+                    "failure_types": [],
+                }
+            ],
+            agent_summary={
+                "target_platform": "hybrid_fanqie_qidian",
+                "rubric_version": "male_webnovel_v1",
+                "expected_rows": 999,
+                "reviewed_rows": 1,
+                "reviewed_card_ids": ["other"],
+                "missing_review_ids": [],
+                "agent_gate_pass": True,
+                "blocked_ids": [],
+                "arbitration_ids": [],
+                "issue_counts": {},
+                "decision": "ready_for_next_expansion",
+                "malformed_review_rows": [],
+            },
+        )
 
 
 def test_summarize_quality_budget_rejects_contradictory_ready_agent_summary():
@@ -237,6 +272,7 @@ def test_summarize_quality_budget_rejects_contradictory_ready_agent_summary():
                 "rubric_version": "male_webnovel_v1",
                 "expected_rows": 3,
                 "reviewed_rows": 3,
+                "reviewed_card_ids": ["a"],
                 "missing_review_ids": [],
                 "agent_gate_pass": False,
                 "blocked_ids": ["a"],
@@ -246,6 +282,7 @@ def test_summarize_quality_budget_rejects_contradictory_ready_agent_summary():
                 "malformed_review_rows": [],
             },
         )
+
 
 def test_rules_passing_summary_without_agent_review_stays_pending():
     summary = summarize_quality_budget(
@@ -368,6 +405,7 @@ def test_build_stage4_quality_report_cli_writes_report(tmp_path: Path):
             '{"target_platform":"hybrid_fanqie_qidian",'
             '"rubric_version":"male_webnovel_v1",'
             '"expected_rows":3,"reviewed_rows":3,'
+            '"reviewed_card_ids":["a"],'
             '"missing_review_ids":[],"agent_gate_pass":true,'
             '"blocked_ids":[],"arbitration_ids":[],'
             '"issue_counts":{},"decision":"not_a_decision",'
@@ -378,6 +416,7 @@ def test_build_stage4_quality_report_cli_writes_report(tmp_path: Path):
             '{"target_platform":"hybrid_fanqie_qidian",'
             '"rubric_version":"male_webnovel_v1",'
             '"expected_rows":3,"reviewed_rows":3,'
+            '"reviewed_card_ids":["a"],'
             '"missing_review_ids":[],"agent_gate_pass":true,'
             '"blocked_ids":[],"arbitration_ids":[],'
             '"issue_counts":{},"decision":[],'
@@ -439,6 +478,7 @@ def test_build_stage4_quality_report_cli_rejects_invalid_agent_summary(
     assert "agent summary" in result.stderr
     assert expected_error in result.stderr
     assert not report_path.exists()
+
 
 def test_build_stage4_quality_report_cli_rejects_explicit_empty_agent_summary_arg(
     tmp_path: Path,

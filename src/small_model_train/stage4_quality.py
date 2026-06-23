@@ -10,6 +10,8 @@ from collections import Counter
 from statistics import mean
 from typing import Any
 
+from small_model_train.agent_review import REVIEWERS
+
 
 OUTLINE_MARKERS = ("【", "】", "章节结构", "以下是正文")
 AGENT_REVIEW_DECISIONS = {
@@ -25,6 +27,7 @@ REQUIRED_AGENT_SUMMARY_FIELDS = (
     "rubric_version",
     "expected_rows",
     "reviewed_rows",
+    "reviewed_card_ids",
     "missing_review_ids",
     "agent_gate_pass",
     "blocked_ids",
@@ -65,7 +68,10 @@ def detect_outline_markers(text: str) -> list[str]:
     return [marker for marker in OUTLINE_MARKERS if marker in text]
 
 
-def validate_agent_summary(agent_summary: dict[str, Any]) -> dict[str, Any]:
+def validate_agent_summary(
+    agent_summary: dict[str, Any],
+    expected_card_ids: list[str] | None = None,
+) -> dict[str, Any]:
     if not isinstance(agent_summary, dict):
         raise ValueError("agent summary must be a dict")
 
@@ -100,12 +106,23 @@ def validate_agent_summary(agent_summary: dict[str, Any]) -> dict[str, Any]:
         "blocked_ids",
         "arbitration_ids",
         "malformed_review_rows",
+        "reviewed_card_ids",
     ):
         if not isinstance(agent_summary[field], list):
             raise ValueError(f"agent summary {field} must be a list")
 
     if not isinstance(agent_summary["issue_counts"], dict):
         raise ValueError("agent summary issue_counts must be a dict")
+
+    if not all(isinstance(sample_id, str) for sample_id in agent_summary["reviewed_card_ids"]):
+        raise ValueError("agent summary reviewed_card_ids must contain strings")
+
+    if expected_card_ids is not None:
+        if agent_summary["reviewed_card_ids"] != expected_card_ids:
+            raise ValueError("agent summary card ids mismatch")
+        expected_review_rows = len(expected_card_ids) * len(REVIEWERS)
+        if agent_summary["expected_rows"] != expected_review_rows:
+            raise ValueError("agent summary expected_rows mismatch")
 
     ready_decisions = {"ready_for_human_spot_check", "ready_for_next_expansion"}
     has_blocking_state = (
@@ -114,6 +131,7 @@ def validate_agent_summary(agent_summary: dict[str, Any]) -> dict[str, Any]:
         or bool(agent_summary["blocked_ids"])
         or bool(agent_summary["arbitration_ids"])
         or bool(agent_summary["malformed_review_rows"])
+        or agent_summary["reviewed_rows"] != agent_summary["expected_rows"]
     )
     if decision in ready_decisions and has_blocking_state:
         raise ValueError("agent summary ready decision conflicts with blocking fields")
@@ -189,7 +207,7 @@ def summarize_quality_budget(
     }
     rule_decision = _quality_decision(summary)
     if agent_summary is not None:
-        agent_summary = validate_agent_summary(agent_summary)
+        agent_summary = validate_agent_summary(agent_summary, expected_ids)
         summary["agent_review"] = agent_summary
     summary["decision"] = _combined_decision(rule_decision, agent_summary)
     summary["recommendation"] = _recommendation(summary["decision"])
