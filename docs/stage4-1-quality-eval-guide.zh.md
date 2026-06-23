@@ -65,10 +65,11 @@ python scripts/run_agent_review.py `
   --backend mock `
   --output outputs/sft_smoke/agent_reviews.jsonl `
   --votes-output outputs/sft_smoke/agent_votes.jsonl `
+  --summary-output outputs/sft_smoke/agent_summary.jsonl `
   --report reports/stage4_agent_review_report.md
 ```
 
-真实三类 reviewer 审核完成后，用 `--reviews-import` 导入 JSONL 审核行。只有 rule gate 与 agent gate 都通过，且 blocker arbitration 已记录并处理，Stage 4.1 才能作为扩展训练证据。
+真实三类 reviewer 审核完成后，用 `--reviews-import` 导入 JSONL 审核行。`agent_summary.jsonl` 需要传给 `build_stage4_quality_report.py --agent-summary`，作为 Stage 4.1 报告的 agent gate 依据。只有 rule gate 与 agent gate 都通过，且 blocker arbitration 已记录并处理，Stage 4.1 才能作为扩展训练证据。
 
 ## 4. 当前 256-token Baseline 报告
 

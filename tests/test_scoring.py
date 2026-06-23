@@ -3,9 +3,32 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from small_model_train.execution_cards import DEFAULT_TARGET_PLATFORM
 from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.scoring import detect_ai_trace, score_output
 
+def _execution_card(sample_id: str = "case1") -> dict:
+    return {
+        "id": sample_id,
+        "target_platform": DEFAULT_TARGET_PLATFORM,
+        "genre_tags": ["xuanhuan", "system"],
+        "style_contract": "男频爽文，节奏紧，强钩子。",
+        "chapter_goal": "主角发现系统任务并反击压迫者。",
+        "chapter_structure": [
+            {
+                "step": 1,
+                "name": "开局压迫",
+                "goal": "建立困境和目标",
+                "estimated_chars": "800",
+            }
+        ],
+        "conflict_beat": "旧势力当众羞辱主角。",
+        "payoff_beat": "主角用系统奖励完成反杀。",
+        "must_include": ["系统面板", "当众反击"],
+        "must_not_include": ["女频误会流"],
+        "ending_hook": "新的悬赏任务出现。",
+        "target_word_count": 1800,
+    }
 
 def test_detect_ai_trace_counts_known_phrases():
     result = detect_ai_trace("空气仿佛凝固了，他心中涌起一股复杂的情绪。")
@@ -51,11 +74,13 @@ def test_score_outputs_cli_reads_cards_and_outputs_jsonl(tmp_path):
     write_jsonl(
         cards_path,
         [
-            {
-                "id": "case1",
-                "must_include": ["加钱"],
-                "must_not_include": ["真相是他父亲"],
-            }
+            dict(
+                _execution_card("case1"),
+                must_include=["加钱"],
+                must_not_include=["真相是他父亲"],
+                payoff_beat="加钱",
+                ending_hook="真相是他父亲",
+            )
         ],
     )
     write_jsonl(outputs_path, [{"id": "case1", "output": "林默说加钱。真相是他父亲。"}])
@@ -82,6 +107,62 @@ def test_score_outputs_cli_reads_cards_and_outputs_jsonl(tmp_path):
     assert rows[0]["id"] == "case1"
     assert rows[0]["hard_gate_pass"] is False
     assert "forbidden_violation" in rows[0]["failure_types"]
+
+
+def test_score_outputs_cli_rejects_raw_cards(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    scores_path = tmp_path / "scores.jsonl"
+    write_jsonl(cards_path, [{"id": "case1", "text": "原文"}])
+    write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/score_outputs.py",
+            "--cards",
+            str(cards_path),
+            "--outputs",
+            str(outputs_path),
+            "--output",
+            str(scores_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "missing execution-card fields" in result.stderr
+    assert not scores_path.exists()
+
+
+def test_score_outputs_cli_rejects_unknown_output_id(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    scores_path = tmp_path / "scores.jsonl"
+    write_jsonl(cards_path, [_execution_card("case1")])
+    write_jsonl(outputs_path, [{"id": "case-missing", "output": "正文"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/score_outputs.py",
+            "--cards",
+            str(cards_path),
+            "--outputs",
+            str(outputs_path),
+            "--output",
+            str(scores_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "output id not found in cards: case-missing" in result.stderr
+    assert not scores_path.exists()
 
 
 def test_score_output_merges_quality_rule_failures():

@@ -69,6 +69,7 @@ def test_run_agent_review_import_mode_writes_votes_and_report(tmp_path: Path):
     imported_reviews_path = tmp_path / "reviews_in.jsonl"
     output_reviews_path = tmp_path / "reviews_out.jsonl"
     votes_path = tmp_path / "votes.jsonl"
+    summary_path = tmp_path / "summary.jsonl"
     report_path = tmp_path / "report.md"
     write_jsonl(cards_path, [_card()])
     write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
@@ -93,6 +94,8 @@ def test_run_agent_review_import_mode_writes_votes_and_report(tmp_path: Path):
         str(output_reviews_path),
         "--votes-output",
         str(votes_path),
+        "--summary-output",
+        str(summary_path),
         "--report",
         str(report_path),
     )
@@ -100,6 +103,7 @@ def test_run_agent_review_import_mode_writes_votes_and_report(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert len(read_jsonl(output_reviews_path)) == 3
     assert read_jsonl(votes_path)[0]["agent_gate_pass"] is True
+    assert read_jsonl(summary_path)[0]["decision"] == "ready_for_next_expansion"
     assert "ready_for_next_expansion" in report_path.read_text(encoding="utf-8")
 
 

@@ -111,6 +111,7 @@ def main() -> int:
     parser.add_argument("--reviews-import")
     parser.add_argument("--output", required=True)
     parser.add_argument("--votes-output", required=True)
+    parser.add_argument("--summary-output")
     parser.add_argument("--report", required=True)
     parser.add_argument("--title", default="Stage 4 Agent Review Report")
     args = parser.parse_args()
@@ -137,6 +138,8 @@ def main() -> int:
 
         write_jsonl(args.output, review_rows)
         write_jsonl(args.votes_output, votes)
+        if args.summary_output:
+            write_jsonl(args.summary_output, [summary])
         report_path = Path(args.report)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report, encoding="utf-8")
@@ -146,6 +149,8 @@ def main() -> int:
 
     print(f"wrote {len(review_rows)} agent review rows to {args.output}")
     print(f"wrote {len(votes)} agent review votes to {args.votes_output}")
+    if args.summary_output:
+        print(f"wrote agent review summary to {args.summary_output}")
     print(f"wrote agent review report to {args.report}")
     return 0 if summary["decision"] in {
         "ready_for_human_spot_check",
