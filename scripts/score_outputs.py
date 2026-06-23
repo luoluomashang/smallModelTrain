@@ -25,8 +25,12 @@ def main() -> int:
         card_rows = validate_execution_cards(read_jsonl(args.cards))
         cards = {str(row["id"]): row for row in card_rows}
         scores = []
+        seen_output_ids: set[str] = set()
         for row in read_jsonl(args.outputs):
             sample_id = str(row["id"])
+            if sample_id in seen_output_ids:
+                raise ValueError(f"duplicate output id: {sample_id}")
+            seen_output_ids.add(sample_id)
             if sample_id not in cards:
                 raise ValueError(f"output id not found in cards: {sample_id}")
             text = row.get("output", row.get("text", ""))

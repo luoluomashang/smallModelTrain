@@ -139,6 +139,10 @@ def validate_agent_summary(
     return agent_summary
 
 
+
+def _duplicate_ids(rows: list[dict[str, Any]]) -> list[str]:
+    counts: Counter[str] = Counter(str(row.get("id", "")) for row in rows)
+    return sorted(sample_id for sample_id, count in counts.items() if sample_id and count > 1)
 def summarize_quality_budget(
     cards: list[dict[str, Any]],
     generated_rows: list[dict[str, Any]],
@@ -193,6 +197,8 @@ def summarize_quality_budget(
         "missing_metric_ids": [
             sample_id for sample_id in expected_ids if sample_id not in metric_by_id
         ],
+        "duplicate_generated_ids": _duplicate_ids(generated_rows),
+        "duplicate_metric_ids": _duplicate_ids(metric_rows),
         "max_new_tokens": max_new_tokens,
         "char_count_min": min(char_counts) if char_counts else 0,
         "char_count_max": max(char_counts) if char_counts else 0,
@@ -312,7 +318,11 @@ def _combined_decision(
 def _quality_decision(summary: dict[str, Any]) -> str:
     if summary["generated_rows"] < summary["expected_rows"]:
         return "blocked_incomplete_generation"
+    if summary.get("missing_generated_ids") or summary.get("duplicate_generated_ids"):
+        return "blocked_incomplete_generation"
     if summary["metrics_rows"] < summary["expected_rows"]:
+        return "blocked_incomplete_metrics"
+    if summary.get("missing_metric_ids") or summary.get("duplicate_metric_ids"):
         return "blocked_incomplete_metrics"
     failures = summary["failure_counts"]
     if failures.get("length_short", 0):

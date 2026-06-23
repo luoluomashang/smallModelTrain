@@ -94,6 +94,25 @@ def test_summarize_quality_budget_counts_rows_tokens_and_failures():
     assert summary["decision"] == "blocked_length_short"
 
 
+def test_summarize_quality_budget_blocks_duplicate_rows_with_missing_ids():
+    cards = [_card("a"), _card("b")]
+    generated = [
+        {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}},
+        {"id": "a", "output": "正文2", "params": {"max_new_tokens": 1024}},
+    ]
+    metrics = [
+        {"id": "a", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+        {"id": "a", "hard_gate_pass": True, "char_count_zh": 2200, "failure_types": []},
+    ]
+
+    summary = summarize_quality_budget(cards, generated, metrics)
+
+    assert summary["missing_generated_ids"] == ["b"]
+    assert summary["missing_metric_ids"] == ["b"]
+    assert summary["duplicate_generated_ids"] == ["a"]
+    assert summary["duplicate_metric_ids"] == ["a"]
+    assert summary["decision"] == "blocked_incomplete_generation"
+
 def test_render_quality_budget_report_does_not_include_generated_text():
     cards = [_card("a")]
     generated = [

@@ -165,6 +165,39 @@ def test_score_outputs_cli_rejects_unknown_output_id(tmp_path):
     assert not scores_path.exists()
 
 
+def test_score_outputs_cli_rejects_duplicate_output_ids(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    scores_path = tmp_path / "scores.jsonl"
+    write_jsonl(cards_path, [_execution_card("case1")])
+    write_jsonl(
+        outputs_path,
+        [
+            {"id": "case1", "output": "正文"},
+            {"id": "case1", "output": "正文2"},
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/score_outputs.py",
+            "--cards",
+            str(cards_path),
+            "--outputs",
+            str(outputs_path),
+            "--output",
+            str(scores_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "duplicate output id: case1" in result.stderr
+    assert not scores_path.exists()
+
 def test_score_output_merges_quality_rule_failures():
     card = {
         "must_include": [],
