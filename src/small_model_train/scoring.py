@@ -94,4 +94,3 @@ def score_output(sample_id: str, card: dict, output: str) -> dict:
         "failure_types": failure_types,
         "quality_rule_details": quality_rules["details"],
     }
-

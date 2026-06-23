@@ -364,6 +364,3 @@ def test_run_agent_review_mock_mode_exits_nonzero_on_failed_metrics(tmp_path: Pa
     assert result.returncode == 1
     assert read_jsonl(votes_path)[0]["agent_gate_pass"] is False
     assert "blocked_by_agent_review" in report_path.read_text(encoding="utf-8")
-
-
-

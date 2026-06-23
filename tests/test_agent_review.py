@@ -407,6 +407,3 @@ def test_render_agent_review_report_uses_spec_fields_and_omits_generated_text():
     assert "semantic_repetition: 1" in report
     assert "case1: pass=2, fail=1, blockers=0" in report
     assert "generated evidence note" not in report
-
-
-

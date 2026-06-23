@@ -644,5 +644,3 @@ def test_non_dry_run_launcher_exception_exits_127_and_writes_failed_event(
     assert [event["status"] for event in events] == ["start", "failed"]
     assert events[-1]["detail"]["exit_code"] == 127
     assert "process_killed" in capsys.readouterr().err
-
-

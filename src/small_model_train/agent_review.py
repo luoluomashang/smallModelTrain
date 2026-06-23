@@ -228,6 +228,3 @@ def _format_id_list(values: list[str]) -> str:
     if not values:
         return "- none"
     return "\n".join(f"- {value}" for value in values)
-
-
-
