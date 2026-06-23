@@ -1,106 +1,89 @@
 # Small Model Train
 
-This project builds a Qwen3-4B-Instruct-2507 QLoRA pipeline for a Chinese whole-chapter novel executor.
+Small Model Train 是一个用于训练和评测中文整章小说执行器的 Python 项目。它围绕 Qwen3-4B-Instruct-2507 做 QLoRA/SFT 训练准备、冒烟训练、推理评测、质量报告和智能体审阅。
 
-## Stage 1 Pipeline
+如果你是第一次打开这个项目，先读这两篇：
+
+- [零基础使用手册](docs/zero-start.zh.md)
+- [项目文档索引](docs/index.zh.md)
+
+如果你已经知道要做什么，可以直接跳到：
+
+- [项目目录地图](docs/project-map.zh.md)
+- [完整数据流说明](docs/pipeline-flow.zh.md)
+- [代码设计说明](docs/code-design.zh.md)
+- [常见问题排查](docs/troubleshooting.zh.md)
+- [术语表](docs/glossary.zh.md)
+
+## 这个项目做什么
+
+这个项目把原始小说文本整理成训练数据，用章节卡约束模型要写什么，再用 SFT/QLoRA 训练一个适合写中文整章正文的适配器。训练后，它会用固定评测卡生成文本、打分、生成报告，并通过质量门槛决定是否能扩大训练规模。
+
+一句话版流程：
+
+```text
+原始小说 -> 清洗章节 -> 章节卡 -> SFT 数据 -> 冒烟训练 -> 评测生成 -> 打分报告 -> 质量/审阅决策
+```
+
+## 最安全的第一次检查
+
+先确认你在项目根目录：
+
+```powershell
+Get-Location
+```
+
+安装轻量开发依赖：
+
+```powershell
+python -m pip install -e ".[dev]"
+```
+
+运行测试：
+
+```powershell
+python -m pytest
+```
+
+这些检查不会启动真实 GPU 训练。
+
+## 常用入口
+
+数据准备从这里开始：
 
 ```powershell
 python scripts/ingest_raw_text.py --input-dir data_raw/novels --output data_clean/chapters_raw.jsonl
 python scripts/clean_chapters.py --input data_clean/chapters_raw.jsonl --output data_clean/chapters.jsonl --min-chars 500 --max-chars 5000
 python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output data_clean/chapters_split.jsonl --eval-output data_cards/eval_cards_50.jsonl --eval-count 50
-python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-output style_contract.md --profile-output style_profile.json
 ```
 
-Prepare `data_cards/chapter_cards.jsonl` separately from the cleaned chapters using the agreed chapter-card schema before building the SFT dataset.
+训练前检查从这里开始：
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl
-```
-
-## Evaluation
-
-```powershell
-python scripts/score_outputs.py --cards data_cards/eval_cards_50.jsonl --outputs outputs/baseline/generated.jsonl --output outputs/baseline/metrics.jsonl
-python scripts/evaluate_outputs.py --scores outputs/baseline/metrics.jsonl --report reports/baseline_report.md --title "Baseline Report"
-```
-
-## Training Config
-
-Use `configs/sft_qlora_qwen3_4b.yaml` for the downstream LLaMA-Factory/Stage 2 QLoRA SFT training run. The repaired Stage 4 path now starts with a 50-sample smoke run. Expansion to 100 or 500 samples is blocked until the decision-log quality criteria pass.
-
-## Stage 3 Data Bring-Up
-
-Stage 3 prepares real chapter data and readiness evidence only. It does not start real GPU training.
-
-```powershell
-python scripts/ingest_raw_text.py --input-dir data_raw/novels --output data_clean/chapters_raw.jsonl
-python scripts/clean_chapters.py --input data_clean/chapters_raw.jsonl --output data_clean/chapters.jsonl --min-chars 500 --max-chars 5000
-python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output data_clean/chapters_split.jsonl --eval-output data_cards/eval_cards_20.jsonl --eval-count 20
-python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-output style_contract.md --profile-output style_profile.json
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl
-python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_20.jsonl --run-smoke-dry-run
-```
-
-See `docs/stage3-data-bring-up-guide.zh.md` for the full Chinese runbook.
-
-## Stage 4 Smoke Eval
-
-Stage 4 starts only after Stage 3 reports `ready_for_stage4_smoke_training`. It uses the repaired 50-card path to rebuild data, run real smoke training, check the adapter, run budgetized eval inference, score outputs, and make the expansion decision.
-
-```powershell
-python scripts/build_chapter_cards.py --chapters data_clean/chapters_split.jsonl --output data_cards/chapter_cards.jsonl --count 50 --min-chars 2000 --max-chars 3000
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl --dataset-info-output data_sft/dataset_info.json
-python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
 python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507 --report reports/model_check_report.md
 python scripts/check_training_env.py --report reports/training_env_report.md
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.jsonl --dry-run
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.jsonl
-python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_execution_cards_50.jsonl
-python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_report.md --title "SFT Smoke Adapter Check"
-python scripts/run_eval_inference.py --cards data_cards/eval_execution_cards_50.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated.jsonl --model-name sft_smoke --event-log logs/training/sft_smoke_eval_events.jsonl --stderr-log logs/training/sft_smoke_eval_stderr.log --stdout-log logs/training/sft_smoke_eval_stdout.log --max-new-tokens 256
-python scripts/score_outputs.py --cards data_cards/eval_execution_cards_50.jsonl --outputs outputs/sft_smoke/generated.jsonl --output outputs/sft_smoke/metrics.jsonl
-python scripts/evaluate_outputs.py --scores outputs/sft_smoke/metrics.jsonl --report reports/sft_smoke_eval_report.md --title "SFT Smoke Eval Report"
+python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
 ```
 
-The `--max-new-tokens 256` eval proves infrastructure only. Quality expansion requires the criteria in `docs/stage4-decision-log.zh.md`: long-generation subset success, budget for 2000-2500 Chinese chars, leak reduction, and full 50 long eval passing the agreed gate.
+真实训练会占用显卡资源。第一次操作前，请先读 [零基础使用手册](docs/zero-start.zh.md) 和 [常见问题排查](docs/troubleshooting.zh.md)。
 
-See `docs/stage4-smoke-eval-guide.zh.md` for the full Chinese runbook and `docs/stage4-decision-log.zh.md` for the current decision.
+## 现有阶段指南
 
-For a handoff summary and next-stage outlook, see `docs/stage4-summary-next-outlook.zh.md`.
+- [第一阶段数据管线中文说明](docs/stage1-pipeline-guide.zh.md)
+- [第三阶段真实数据准备指南](docs/stage3-data-bring-up-guide.zh.md)
+- [第四阶段 Smoke Eval 指南](docs/stage4-smoke-eval-guide.zh.md)
+- [Stage 4.1 Quality Eval Hardening 指南](docs/stage4-1-quality-eval-guide.zh.md)
+- [Stage 4 决策日志](docs/stage4-decision-log.zh.md)
+- [第四阶段总结与下一阶段前瞻](docs/stage4-summary-next-outlook.zh.md)
 
-## Stage 4.1 Quality Eval Hardening
+## 重要提醒
 
-Stage 4.1 keeps the 50-card control set fixed and measures long-generation quality before any 100/500-sample expansion. It uses a tracked 6144 smoke config, a deterministic quality subset, and a budget report that records counts, failure types, and outline-leak markers without copying generated chapter text into docs.
+- `data_raw/`、`data_clean/`、`data_cards/`、`data_sft/` 是数据层级。
+- `outputs/` 是模型生成和训练产物。
+- `reports/` 是人读的报告。
+- `logs/` 是排错时看的运行日志。
+- `src/small_model_train/` 放核心逻辑。
+- `scripts/` 放命令入口。
+- `tests/` 放自动化测试。
 
-```powershell
-python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_execution_cards_50.jsonl
-python scripts/build_eval_quality_subset.py --cards data_cards/eval_execution_cards_50.jsonl --metrics outputs/sft_smoke/metrics.jsonl --output data_cards/eval_cards_quality_subset.jsonl --count 8
-python scripts/run_eval_inference.py --cards data_cards/eval_cards_quality_subset.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated_subset_1024.jsonl --model-name sft_smoke_subset_1024 --max-new-tokens 1024
-python scripts/score_outputs.py --cards data_cards/eval_cards_quality_subset.jsonl --outputs outputs/sft_smoke/generated_subset_1024.jsonl --output outputs/sft_smoke/metrics_subset_1024.jsonl
-python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
-```
-
-See `docs/stage4-1-quality-eval-guide.zh.md` for the full Chinese runbook.
-
-## Stage 2 Training Execution
-
-Run Stage 2 from a shell with the training environment activated. The local base model path is `E:\models\Qwen3-4B-Instruct-2507`.
-
-This section is legacy Stage 2 execution context. The current repaired Stage 4 smoke path is the preceding 50-card sequence and its decision-log gates.
-
-```powershell
-python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507
-python scripts/check_training_env.py
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_20.jsonl --dry-run
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_20.jsonl
-python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_report.md --title "SFT Smoke Adapter Check"
-python scripts/run_oom_probe.py --dry-run
-python scripts/run_oom_probe.py
-python scripts/run_sft_train.py
-python scripts/check_adapter.py --adapter-dir outputs/sft_v1 --report reports/sft_v1_training_report.md --title "SFT v1 Adapter Check"
-python scripts/run_eval_inference.py
-python scripts/score_outputs.py --cards data_cards/eval_cards_50.jsonl --outputs outputs/sft_v1/generated.jsonl --output outputs/sft_v1/metrics.jsonl
-python scripts/evaluate_outputs.py --scores outputs/sft_v1/metrics.jsonl --report reports/sft_v1_report.md --title "SFT v1 Report"
-```
-
-If a training or eval subprocess exits with CUDA OOM, launcher failure, or a crash, use the event log, stderr log, and `run_oom_probe.py` report to identify whether the failure is memory pressure, environment drift, or process termination before retrying.
+真实 GPU 训练依赖本地模型路径、CUDA、PyTorch、transformers、peft、bitsandbytes 和 LLaMA-Factory 环境。轻量数据处理和测试不等于真实训练环境已经可用。
