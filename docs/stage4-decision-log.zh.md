@@ -11,6 +11,13 @@ Stage 4 基础设施闭环已经证明: data -> SFT -> smoke training -> adapter
 
 质量闭环尚未证明: budgetized eval 的生成预算对 2000-2500 字硬门槛明显过短, 且 12 个样本仍存在 outline leak。
 
+## Agent Review Acceptance Gate
+
+- design spec: `docs/superpowers/specs/2026-06-21-agent-review-acceptance-system-design.md`
+- implementation plan: `docs/superpowers/plans/2026-06-21-male-webnovel-agent-review-acceptance.md`
+- scope: 评估正文执行质量，不改变当前训练方法；外部执行卡负责情节、结构、冲突、爽点和章末钩子。
+- expansion 前置: execution-card schema guard、deterministic quality rules、agent majority gate，以及 blocker votes 的人工仲裁记录与处理。
+
 ## 数据就绪证据
 
 - decision: `ready_for_stage4_smoke_training`

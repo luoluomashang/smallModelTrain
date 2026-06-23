@@ -52,6 +52,24 @@ python scripts/score_outputs.py --cards data_cards/eval_cards_quality_subset.jso
 python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_2048.jsonl --metrics outputs/sft_smoke/metrics_subset_2048.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
 ```
 
+## Agent Review Gate
+
+Stage 4.1 不再只依赖 rule metrics。`score_outputs.py` 完成后，必须继续运行 agent review coordinator，验证正文是否执行了外部执行卡中的结构、冲突、爽点和章末钩子。
+
+```powershell
+python scripts/run_agent_review.py `
+  --cards data_cards/eval_cards_quality_subset.jsonl `
+  --outputs outputs/sft_smoke/generated_subset_2048.jsonl `
+  --metrics outputs/sft_smoke/metrics_subset_2048.jsonl `
+  --target-platform hybrid_fanqie_qidian `
+  --backend mock `
+  --output outputs/sft_smoke/agent_reviews.jsonl `
+  --votes-output outputs/sft_smoke/agent_votes.jsonl `
+  --report reports/stage4_agent_review_report.md
+```
+
+真实三类 reviewer 审核完成后，用 `--reviews-import` 导入 JSONL 审核行。只有 rule gate 与 agent gate 都通过，且 blocker arbitration 已记录并处理，Stage 4.1 才能作为扩展训练证据。
+
 ## 4. 当前 256-token Baseline 报告
 
 已有 Stage 4 的 256-token eval 只证明基础设施，不证明质量。可以用同一个报告脚本生成 baseline 证据，确认当前决策仍然是长度阻断。
