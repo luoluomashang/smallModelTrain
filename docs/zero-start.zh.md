@@ -129,6 +129,8 @@ python scripts/check_training_env.py --report reports/training_env_report.md
 
 Dry-run 是试运行。它用来确认路径、参数、配置和即将执行的命令是否合理。它通常不会真正训练模型。
 
+下面的命令会使用 `data_cards/eval_execution_cards_50.jsonl`。这是 Stage 4 脚本使用的更严格执行卡版本；如果这个文件不存在，先停下来，按 [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md) 或当前 Stage 4 数据准备路径补齐后再训练。
+
 示例：
 
 ```powershell
@@ -138,6 +140,8 @@ python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.
 ## 什么是真实训练
 
 真实训练会占用显卡和较长时间。不要在 readiness、模型检查、环境检查失败时硬跑。
+
+下面的真实训练命令同样使用 `data_cards/eval_execution_cards_50.jsonl`。它不是前面入门数据准备命令自动生成的文件；如果缺失，先按 [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md) 或当前 Stage 4 数据准备路径处理，不要直接开训。
 
 Smoke training 示例：
 

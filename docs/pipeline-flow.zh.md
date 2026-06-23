@@ -118,6 +118,15 @@ python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --cha
 
 ## 7. 训练前 readiness
 
+输入：
+
+- `data_clean/chapters_split.jsonl`
+- `data_cards/chapter_cards.jsonl`
+- `data_cards/eval_cards_50.jsonl`
+- `data_sft/sft_chapter_v1.jsonl`
+- `configs/sft_qlora_qwen3_4b.yaml`
+- `E:\models\Qwen3-4B-Instruct-2507`
+
 命令：
 
 ```powershell
@@ -129,6 +138,11 @@ python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards
 成功标志：报告给出可以进入 smoke training 的状态。
 
 ## 8. 模型和环境检查
+
+输入：
+
+- 模型检查：`E:\models\Qwen3-4B-Instruct-2507`
+- 环境检查：当前 Python、GPU 和训练环境
 
 命令：
 
@@ -146,6 +160,13 @@ python scripts/check_training_env.py --report reports/training_env_report.md
 
 ## 9. Smoke training
 
+输入：
+
+- `configs/sft_qlora_qwen3_4b_smoke_6144.yaml`
+- `data_sft/sft_chapter_v1.jsonl`
+- `data_cards/eval_execution_cards_50.jsonl`
+- `E:\models\Qwen3-4B-Instruct-2507`
+
 命令：
 
 ```powershell
@@ -158,6 +179,10 @@ python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.y
 
 ## 10. Adapter 检查
 
+输入：
+
+- `outputs/sft_smoke/`
+
 命令：
 
 ```powershell
@@ -169,6 +194,13 @@ python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports
 成功标志：报告确认 adapter 结构可读。
 
 ## 11. Eval 推理和评分
+
+输入：
+
+- `data_cards/eval_execution_cards_50.jsonl`
+- `outputs/sft_smoke/`
+- 评分使用前一步生成的 `outputs/sft_smoke/generated.jsonl`
+- 报告使用评分产生的 `outputs/sft_smoke/metrics.jsonl`
 
 命令：
 
@@ -188,6 +220,12 @@ python scripts/evaluate_outputs.py --scores outputs/sft_smoke/metrics.jsonl --re
 
 ## 12. Stage 4.1 质量评测
 
+输入：
+
+- `data_cards/eval_execution_cards_50.jsonl`
+- `outputs/sft_smoke/metrics.jsonl`
+- `outputs/sft_smoke/`
+
 命令：
 
 ```powershell
@@ -197,7 +235,12 @@ python scripts/score_outputs.py --cards data_cards/eval_cards_quality_subset.jso
 python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
 ```
 
-输出：`reports/stage4_1_quality_eval_budget_report.md`
+输出：
+
+- `data_cards/eval_cards_quality_subset.jsonl`
+- `outputs/sft_smoke/generated_subset_1024.jsonl`
+- `outputs/sft_smoke/metrics_subset_1024.jsonl`
+- `reports/stage4_1_quality_eval_budget_report.md`
 
 成功标志：报告说明是否通过质量门槛，而不是只看命令有没有跑完。
 
