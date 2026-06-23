@@ -63,4 +63,6 @@
 
 ## 判断一个文件是不是生成物
 
-如果文件来自某条脚本命令的 `--output`、`--report`、`--stdout-log`、`--stderr-log` 或 `--event-log` 参数，它通常就是生成物。生成物可以删除后重建，但删除前要确认没有正在使用它的报告或决策记录。
+如果文件来自某条脚本命令的输出、报告或日志类参数，它通常就是生成物。常见例子包括 `--output`、`--eval-output`、`--contract-output`、`--profile-output`、`--dataset-info-output`、`--output-dir`、`--report`、`--stdout-log`、`--stderr-log`、`--event-log`、`--log-dir`、`--votes-output` 和 `--summary-output`。
+
+根目录里的生成文件也可能只在跑过命令后才出现，例如 `style_contract.md`、`style_profile.json` 和 `mlflow.db`。生成物可以删除后重建，但删除前要确认没有正在使用它的报告或决策记录。
