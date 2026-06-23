@@ -11,6 +11,7 @@ from statistics import mean
 from typing import Any
 
 from small_model_train.agent_review import REVIEWERS
+from small_model_train.execution_cards import VALID_TARGET_PLATFORMS
 
 
 OUTLINE_MARKERS = ("【", "】", "章节结构", "以下是正文")
@@ -92,6 +93,10 @@ def validate_agent_summary(
     for field in ("target_platform", "rubric_version"):
         if not isinstance(agent_summary[field], str):
             raise ValueError(f"agent summary {field} must be a string")
+    if agent_summary["target_platform"] not in VALID_TARGET_PLATFORMS:
+        raise ValueError(
+            f"unknown agent summary target_platform: {agent_summary['target_platform']}"
+        )
 
     for field in ("expected_rows", "reviewed_rows"):
         value = agent_summary[field]

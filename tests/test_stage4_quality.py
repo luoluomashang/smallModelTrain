@@ -269,6 +269,37 @@ def test_summarize_quality_budget_rejects_invalid_agent_review_summary():
         )
 
 
+def test_summarize_quality_budget_rejects_unknown_agent_summary_target_platform():
+    with pytest.raises(ValueError, match="unknown agent summary target_platform"):
+        summarize_quality_budget(
+            cards=[_card("a")],
+            generated_rows=[
+                {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}}
+            ],
+            metric_rows=[
+                {
+                    "id": "a",
+                    "hard_gate_pass": True,
+                    "char_count_zh": 2200,
+                    "failure_types": [],
+                }
+            ],
+            agent_summary={
+                "target_platform": "unknown_platform",
+                "rubric_version": "male_webnovel_v1",
+                "expected_rows": 3,
+                "reviewed_rows": 3,
+                "reviewed_card_ids": ["a"],
+                "missing_review_ids": [],
+                "agent_gate_pass": True,
+                "blocked_ids": [],
+                "arbitration_ids": [],
+                "issue_counts": {},
+                "decision": "ready_for_next_expansion",
+                "malformed_review_rows": [],
+            },
+        )
+
 def test_summarize_quality_budget_accepts_pending_agent_review_summary():
     summary = summarize_quality_budget(
         cards=[_card("a")],

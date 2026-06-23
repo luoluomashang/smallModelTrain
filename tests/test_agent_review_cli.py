@@ -503,6 +503,94 @@ def test_run_agent_review_mock_mode_exits_nonzero_when_metrics_have_duplicate_id
     assert result.returncode != 0
     assert "metrics duplicate rows for card ids: case1" in result.stderr
 
+def test_run_agent_review_import_mode_exits_nonzero_when_outputs_have_missing_id(
+    tmp_path: Path,
+):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    metrics_path = tmp_path / "metrics.jsonl"
+    imported_reviews_path = tmp_path / "reviews_in.jsonl"
+    output_reviews_path = tmp_path / "reviews_out.jsonl"
+    votes_path = tmp_path / "votes.jsonl"
+    report_path = tmp_path / "report.md"
+    write_jsonl(cards_path, [_card("case1")])
+    write_jsonl(
+        outputs_path,
+        [
+            {"id": "case1", "output": "正文"},
+            {"output": "缺失 id 的旧批次正文"},
+        ],
+    )
+    write_jsonl(metrics_path, [{"id": "case1", "hard_gate_pass": True, "failure_types": []}])
+    write_jsonl(
+        imported_reviews_path,
+        [_review("case1", reviewer, True) for reviewer in sorted(REVIEWERS)],
+    )
+
+    result = _run_cli(
+        "--cards",
+        str(cards_path),
+        "--outputs",
+        str(outputs_path),
+        "--metrics",
+        str(metrics_path),
+        "--target-platform",
+        DEFAULT_TARGET_PLATFORM,
+        "--reviews-import",
+        str(imported_reviews_path),
+        "--output",
+        str(output_reviews_path),
+        "--votes-output",
+        str(votes_path),
+        "--report",
+        str(report_path),
+    )
+
+    assert result.returncode != 0
+    assert "outputs row 2 missing id" in result.stderr
+
+
+def test_run_agent_review_mock_mode_exits_nonzero_when_metrics_have_empty_id(
+    tmp_path: Path,
+):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    metrics_path = tmp_path / "metrics.jsonl"
+    output_reviews_path = tmp_path / "reviews_out.jsonl"
+    votes_path = tmp_path / "votes.jsonl"
+    report_path = tmp_path / "report.md"
+    write_jsonl(cards_path, [_card("case1")])
+    write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
+    write_jsonl(
+        metrics_path,
+        [
+            {"id": "case1", "hard_gate_pass": True, "failure_types": []},
+            {"id": "", "hard_gate_pass": True, "failure_types": []},
+        ],
+    )
+
+    result = _run_cli(
+        "--cards",
+        str(cards_path),
+        "--outputs",
+        str(outputs_path),
+        "--metrics",
+        str(metrics_path),
+        "--target-platform",
+        DEFAULT_TARGET_PLATFORM,
+        "--backend",
+        "mock",
+        "--output",
+        str(output_reviews_path),
+        "--votes-output",
+        str(votes_path),
+        "--report",
+        str(report_path),
+    )
+
+    assert result.returncode != 0
+    assert "metrics row 2 missing id" in result.stderr
+
 def test_run_agent_review_mock_mode_exits_nonzero_on_failed_metrics(tmp_path: Path):
     cards_path = tmp_path / "cards.jsonl"
     outputs_path = tmp_path / "outputs.jsonl"

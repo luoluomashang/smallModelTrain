@@ -34,8 +34,16 @@ def _read_required_jsonl(path: str | Path, label: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _row_ids(rows: list[dict[str, Any]]) -> list[str]:
-    return [str(row.get("id", "")) for row in rows if isinstance(row, dict)]
+def _row_ids(label: str, rows: list[dict[str, Any]]) -> list[str]:
+    row_ids: list[str] = []
+    for row_number, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"{label} row {row_number} must be an object")
+        raw_id = row.get("id")
+        if not isinstance(raw_id, str) or not raw_id.strip():
+            raise ValueError(f"{label} row {row_number} missing id")
+        row_ids.append(raw_id.strip())
+    return row_ids
 
 
 def _missing_ids(expected_ids: list[str], row_ids: list[str]) -> list[str]:
@@ -58,7 +66,7 @@ def _validate_exact_ids(
     expected_ids: list[str],
     rows: list[dict[str, Any]],
 ) -> None:
-    row_ids = _row_ids(rows)
+    row_ids = _row_ids(label, rows)
     missing = _missing_ids(expected_ids, row_ids)
     if missing:
         raise ValueError(f"{label} missing rows for card ids: {', '.join(missing)}")
