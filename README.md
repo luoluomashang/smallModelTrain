@@ -53,12 +53,12 @@ python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --cha
 python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --run-smoke-dry-run
 python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507 --report reports/model_check_report.md
 python scripts/check_training_env.py --report reports/training_env_report.md
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_50.jsonl --dry-run
-python scripts/run_sft_smoke.py --eval-cards data_cards/eval_cards_50.jsonl
-python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_cards_50.jsonl
+python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.jsonl --dry-run
+python scripts/run_sft_smoke.py --eval-cards data_cards/eval_execution_cards_50.jsonl
+python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_execution_cards_50.jsonl
 python scripts/check_adapter.py --adapter-dir outputs/sft_smoke --report reports/sft_smoke_report.md --title "SFT Smoke Adapter Check"
-python scripts/run_eval_inference.py --cards data_cards/eval_cards_50.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated.jsonl --model-name sft_smoke --event-log logs/training/sft_smoke_eval_events.jsonl --stderr-log logs/training/sft_smoke_eval_stderr.log --stdout-log logs/training/sft_smoke_eval_stdout.log --max-new-tokens 256
-python scripts/score_outputs.py --cards data_cards/eval_cards_50.jsonl --outputs outputs/sft_smoke/generated.jsonl --output outputs/sft_smoke/metrics.jsonl
+python scripts/run_eval_inference.py --cards data_cards/eval_execution_cards_50.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated.jsonl --model-name sft_smoke --event-log logs/training/sft_smoke_eval_events.jsonl --stderr-log logs/training/sft_smoke_eval_stderr.log --stdout-log logs/training/sft_smoke_eval_stdout.log --max-new-tokens 256
+python scripts/score_outputs.py --cards data_cards/eval_execution_cards_50.jsonl --outputs outputs/sft_smoke/generated.jsonl --output outputs/sft_smoke/metrics.jsonl
 python scripts/evaluate_outputs.py --scores outputs/sft_smoke/metrics.jsonl --report reports/sft_smoke_eval_report.md --title "SFT Smoke Eval Report"
 ```
 
@@ -73,8 +73,8 @@ For a handoff summary and next-stage outlook, see `docs/stage4-summary-next-outl
 Stage 4.1 keeps the 50-card control set fixed and measures long-generation quality before any 100/500-sample expansion. It uses a tracked 6144 smoke config, a deterministic quality subset, and a budget report that records counts, failure types, and outline-leak markers without copying generated chapter text into docs.
 
 ```powershell
-python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_cards_50.jsonl
-python scripts/build_eval_quality_subset.py --cards data_cards/eval_cards_50.jsonl --metrics outputs/sft_smoke/metrics.jsonl --output data_cards/eval_cards_quality_subset.jsonl --count 8
+python scripts/run_sft_smoke.py --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --eval-cards data_cards/eval_execution_cards_50.jsonl
+python scripts/build_eval_quality_subset.py --cards data_cards/eval_execution_cards_50.jsonl --metrics outputs/sft_smoke/metrics.jsonl --output data_cards/eval_cards_quality_subset.jsonl --count 8
 python scripts/run_eval_inference.py --cards data_cards/eval_cards_quality_subset.jsonl --adapter-dir outputs/sft_smoke --output outputs/sft_smoke/generated_subset_1024.jsonl --model-name sft_smoke_subset_1024 --max-new-tokens 1024
 python scripts/score_outputs.py --cards data_cards/eval_cards_quality_subset.jsonl --outputs outputs/sft_smoke/generated_subset_1024.jsonl --output outputs/sft_smoke/metrics_subset_1024.jsonl
 python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_quality_subset.jsonl --generated outputs/sft_smoke/generated_subset_1024.jsonl --metrics outputs/sft_smoke/metrics_subset_1024.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
