@@ -56,6 +56,27 @@ Get-Content data_cards/chapter_cards.jsonl -TotalCount 3
 - `data_cards/chapter_cards.jsonl` 或 eval cards 不是当前脚本期望的格式。
 - 章节卡和章节 split 文件没有对齐。
 - 生成结果、metrics、review 三类文件的 sample id 对不上。
+- `data_cards/eval_cards_50.jsonl` 和 `data_cards/eval_execution_cards_50.jsonl` 被混用。它们不是同一种卡，不能互相替代。
+
+Stage 4 推理、评分和 Agent review 要求严格的 execution-card schema。`data_cards/eval_execution_cards_50.jsonl` 至少要包含这些执行字段：
+
+- `target_platform`
+- `genre_tags`
+- `style_contract`
+- `chapter_goal`
+- `chapter_structure`
+- `conflict_beat`
+- `payoff_beat`
+- `must_include`
+- `must_not_include`
+- `ending_hook`
+- `target_word_count`
+
+先用 dry-run 校验执行卡：
+
+```powershell
+python scripts/run_eval_inference.py --cards data_cards/eval_execution_cards_50.jsonl --output outputs/sft_smoke/generated_dry_run.jsonl --model-name sft_smoke --dry-run
+```
 
 先看：
 
@@ -68,6 +89,7 @@ Get-Content data_cards/chapter_cards.jsonl -TotalCount 3
 - 重新生成章节卡。
 - 重新构建 SFT 数据。
 - 不要跳过 readiness 报告直接训练。
+- 如果 dry-run 失败，修复或重新创建 `data_cards/eval_execution_cards_50.jsonl`。只重新生成章节卡和 SFT 数据，不能修复 execution-card schema 错误。
 
 ## 本地模型路径错误
 
@@ -168,7 +190,10 @@ python scripts/run_oom_probe.py
 ```powershell
 python scripts/score_outputs.py --cards data_cards/eval_execution_cards_50.jsonl --outputs outputs/sft_smoke/generated.jsonl --output outputs/sft_smoke/metrics.jsonl
 python scripts/evaluate_outputs.py --scores outputs/sft_smoke/metrics.jsonl --report reports/sft_smoke_eval_report.md --title "SFT Smoke Eval Report"
+python scripts/build_stage4_quality_report.py --cards data_cards/eval_execution_cards_50.jsonl --generated outputs/sft_smoke/generated.jsonl --metrics outputs/sft_smoke/metrics.jsonl --report reports/stage4_1_quality_eval_budget_report.md --title "Stage 4.1 Quality Eval Budget Report"
 ```
+
+`build_stage4_quality_report.py` 会检查 expected、generated、metrics 的行数和 missing ids，更适合发现生成覆盖不完整、generated 或 metrics 行缺失的问题。
 
 安全处理：
 
