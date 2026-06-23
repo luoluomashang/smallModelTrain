@@ -60,6 +60,7 @@ Get-Content data_cards/chapter_cards.jsonl -TotalCount 3
 
 Stage 4 推理、评分和 Agent review 要求严格的 execution-card schema。`data_cards/eval_execution_cards_50.jsonl` 至少要包含这些执行字段：
 
+- `id`
 - `target_platform`
 - `genre_tags`
 - `style_contract`
