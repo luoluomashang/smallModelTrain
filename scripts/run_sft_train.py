@@ -125,6 +125,7 @@ def main() -> int:
         not args.dry_run
         and training_exit_code == 0
         and adapter_check.get("passed") is True
+        and sft_summary.get("schema", {}).get("valid") is True
         and isinstance(eval_summary, dict)
         and eval_summary.get("schema", {}).get("valid") is True
     )

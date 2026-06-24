@@ -1167,6 +1167,82 @@ def test_run_sft_train_writes_manifest_when_training_exits_nonzero(
     assert manifest["passed"] is False
 
 
+def test_run_sft_train_formal_evidence_requires_valid_sft_schema(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{not json\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    write_valid_adapter(output_dir)
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_subprocess",
+        lambda _run: {
+            "exit_code": 0,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "none", "suggestion": "无"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--config",
+            str(tmp_path / "config.yaml"),
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--output-dir",
+            str(output_dir),
+            "--log-dir",
+            str(tmp_path / "logs"),
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+        ],
+    )
+
+    exit_code = run_sft_train.main()
+
+    manifest = json.loads((output_dir / "run_manifest.json").read_text("utf-8"))
+    assert exit_code == 0
+    assert manifest["adapter_check"]["passed"] is True
+    assert manifest["eval_cards"]["schema"]["valid"] is True
+    assert manifest["sft_dataset"]["schema"]["valid"] is False
+    assert "not valid JSON" in "\n".join(manifest["sft_dataset"]["schema"]["errors"])
+    assert manifest["formal_evidence"] is False
+
+
 def test_run_sft_train_writes_failed_manifest_when_adapter_invalid(
     monkeypatch,
     tmp_path: Path,
