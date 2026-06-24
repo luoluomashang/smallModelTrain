@@ -23,7 +23,8 @@
 3. [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md)
 4. [Stage 4.1 Quality Eval Hardening 指南](stage4-1-quality-eval-guide.zh.md)
 5. [Stage 5A 证据链修正操作指南](stage5a-evidence-chain-hardening.zh.md)
-6. [Stage 4 决策日志](stage4-decision-log.zh.md)
+6. [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)
+7. [Stage 4 决策日志](stage4-decision-log.zh.md)
 
 这条路线适合已经会用 PowerShell、Python，并且只想按步骤复跑数据准备、训练检查、评测和报告的人。
 
@@ -46,6 +47,7 @@
 - [第四阶段 Smoke Eval 指南](stage4-smoke-eval-guide.zh.md)：解释固定 50 卡 smoke training、adapter 检查、eval 推理和评分。
 - [Stage 4.1 Quality Eval Hardening 指南](stage4-1-quality-eval-guide.zh.md)：解释长生成质量评测、质量子集、预算报告和审阅门槛。
 - [Stage 5A 证据链修正操作指南](stage5a-evidence-chain-hardening.zh.md)：解释 preflight JSON、draft card 显式豁免、raw-first eval、rule projection 和 run manifest 证据链。
+- [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)：解释 StyleContract JSON、Markdown、metrics、approval status 和 formal SFT 绑定。
 - [Stage 4 决策日志](stage4-decision-log.zh.md)：记录当前是否允许扩大训练规模，以及原因。
 - [Stage 4.1 Full50 归档](stage4-1-full50-archive.zh.md)：归档 full50 运行证据。
 - [Stage 4.1 Full50 Manual Review Findings](stage4-1-full50-manual-review.zh.md)：记录人工复核发现。
@@ -57,6 +59,7 @@
 - `data_raw/novels/`：你放进去的原始小说文本。
 - `data_clean/`：清洗、切章、划分后的章节数据。
 - `data_cards/`：章节卡、评测卡、质量子集卡。
+- `data_style/`：Stage 5B 生成的 StyleContract JSON 和 style metrics。
 - `data_sft/`：给训练用的 SFT 数据和数据集元信息。
 - `outputs/`：训练产物、adapter、生成结果、metrics。
 - `reports/`：模型检查、环境检查、readiness、评测和质量报告。

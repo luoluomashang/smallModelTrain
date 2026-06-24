@@ -24,7 +24,7 @@ flowchart TD
     A["原始小说文本 data_raw/novels"] --> B["ingest_raw_text.py 读取并初步切章为 JSONL"]
     B --> C["clean_chapters.py 规范、过滤、去重"]
     C --> D["split_train_eval.py 固定 train/eval"]
-    D --> E["build_style_contract.py 生成风格画像与风格契约"]
+    D --> E["build_style_contract.py 生成 StyleContract JSON、Markdown 与 metrics"]
     D --> F["人工/Agent 准备 chapter_cards.jsonl"]
     F --> G["build_sft_dataset.py 构造 SFT 数据"]
     G --> H["Stage 2 训练输入 data_sft/sft_chapter_v1.jsonl"]
@@ -49,6 +49,8 @@ flowchart TD
 `data_clean/` 放清理后的章节数据。`chapters_raw.jsonl` 是初步读入的章节清单，`chapters.jsonl` 是清洗、过滤、去重后的章节清单，`chapters_split.jsonl` 是已经标好 `train` 或 `eval` 的版本。
 
 `data_cards/` 放章节卡和评测卡。`chapter_cards.jsonl` 是训练样本构造需要的人工/Agent 章节卡，`eval_cards_50.jsonl` 是固定评测集。
+
+`data_style/` 放 Stage 5B 风格资产。`style_contract_author_main_v1.json` 是 formal SFT 的机器门禁源，`style_metrics_author_main_v1.json` 是默认风格统计产物；根目录 `style_contract.md` 只用于人工审阅。
 
 `data_sft/` 放 SFT 训练数据。`sft_chapter_v1.jsonl` 是第一阶段交给第二阶段训练的核心产物。
 
@@ -103,7 +105,7 @@ SFT 数据是一条训练样本。`instruction` 是总任务，`input` 是章节
 | `scripts/ingest_raw_text.py` | `data_raw/novels/*.txt` | `data_clean/chapters_raw.jsonl` | 读取原始文本，并先按章节标题切成 raw JSONL。 |
 | `scripts/clean_chapters.py` | `chapters_raw.jsonl` | `chapters.jsonl` | 规范换行，按字数过滤，再去掉重复正文。 |
 | `scripts/split_train_eval.py` | `chapters.jsonl` | `chapters_split.jsonl`, `eval_cards_50.jsonl` | 固定留出评测集，后面比较模型时才公平。 |
-| `scripts/build_style_contract.py` | `chapters_split.jsonl` | `style_profile.json`, `style_contract.md` | 统计篇幅、段落长度、对话比例，写成风格约束。 |
+| `scripts/build_style_contract.py` | `chapters_split.jsonl` | `data_style/style_contract_author_main_v1.json`, `style_contract.md`, `data_style/style_metrics_author_main_v1.json` | 统计篇幅、段落长度、对话比例，生成 formal SFT 可绑定的 StyleContract JSON、人工审阅 Markdown 和 metrics。 |
 | `scripts/build_sft_dataset.py` | `chapter_cards.jsonl`, `chapters_split.jsonl` | `sft_chapter_v1.jsonl` | 把章节卡和目标正文配成训练样本。 |
 | `scripts/score_outputs.py` | eval cards 和模型输出 | `metrics.jsonl` | 用规则检查长度、情节覆盖、重复和 AI 味。 |
 | `scripts/evaluate_outputs.py` | `metrics.jsonl` | Markdown 报告 | 把分数汇总成人能读的报告。 |
@@ -151,10 +153,10 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 执行后应该出现 `data_clean/chapters_split.jsonl` 和 `data_cards/eval_cards_50.jsonl`，前者标出 train/eval，后者是固定评测样本。
 
 ```powershell
-python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-output style_contract.md --profile-output style_profile.json
+python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-json-output data_style/style_contract_author_main_v1.json --contract-output style_contract.md --metrics-output data_style/style_metrics_author_main_v1.json --style-contract-id author_main_v1
 ```
 
-执行后应该出现 `style_contract.md` 和 `style_profile.json`，分别是给 prompt 用的风格约束和可复查的统计画像。
+执行后应该出现 `data_style/style_contract_author_main_v1.json`、`style_contract.md` 和 `data_style/style_metrics_author_main_v1.json`。Stage 5B 起，formal SFT 使用 StyleContract JSON 作为机器门禁源，Markdown 只用于人工审阅；旧的 `style_profile.json` 仍可通过 `--profile-output` 作为兼容统计输出。
 
 接着需要单独准备 `data_cards/chapter_cards.jsonl`。这一步不是脚本自动完成的，因为章节卡决定训练输入质量，必须避免把目标正文直接塞进 prompt。
 

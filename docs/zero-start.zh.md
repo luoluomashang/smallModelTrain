@@ -71,13 +71,16 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 ## 生成风格信息
 
 ```powershell
-python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-output style_contract.md --profile-output style_profile.json
+python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-json-output data_style/style_contract_author_main_v1.json --contract-output style_contract.md --metrics-output data_style/style_metrics_author_main_v1.json --style-contract-id author_main_v1
 ```
 
 成功后你会看到：
 
+- `data_style/style_contract_author_main_v1.json`
 - `style_contract.md`
-- `style_profile.json`
+- `data_style/style_metrics_author_main_v1.json`
+
+Stage 5B 起，formal SFT 使用 `data_style/style_contract_author_main_v1.json` 作为机器门禁源；`style_contract.md` 只用于人工审阅。旧的 `style_profile.json` 仍可通过 `--profile-output` 作为兼容统计输出，但默认说明以 `data_style/style_metrics_author_main_v1.json` 为准。
 
 ## 构建训练数据
 

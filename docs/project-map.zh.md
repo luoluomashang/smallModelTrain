@@ -6,8 +6,8 @@
 
 - `README.md`：项目入口，负责告诉你从哪里开始。
 - `pyproject.toml`：Python 项目配置，包含测试路径和开发依赖。
-- `style_contract.md`：由脚本生成的风格契约，用来概括训练数据的风格特征。
-- `style_profile.json`：由脚本生成的风格统计数据。
+- `style_contract.md`：由脚本生成的风格契约 Markdown 摘要。Stage 5B 起，它用于人工审阅，formal SFT 的机器门禁源是 `data_style/` 中的 StyleContract JSON。
+- `style_profile.json`：旧版/可选的风格统计输出，可通过 `--profile-output` 生成；Stage 5B 默认 metrics 产物在 `data_style/style_metrics_author_main_v1.json`。
 - `mlflow.db`：训练或实验记录数据库，属于运行产物。
 
 ## 源码目录
@@ -23,6 +23,7 @@
 - `data_clean/chapters.jsonl`：清洗和长度过滤后的章节。
 - `data_clean/chapters_split.jsonl`：标记 train/eval 划分后的章节。
 - `data_cards/`：章节卡、评测卡、执行卡、质量子集。
+- `data_style/`：Stage 5B 生成的 StyleContract JSON 和 style metrics。默认包括 `style_contract_author_main_v1.json` 和 `style_metrics_author_main_v1.json`。
 - `data_sft/`：训练数据和 LLaMA-Factory 数据集元信息。
 
 ## 配置、输出、报告和日志
@@ -65,4 +66,4 @@
 
 如果文件来自某条脚本命令的输出、报告或日志类参数，它通常就是生成物。常见例子包括 `--output`、`--eval-output`、`--contract-output`、`--profile-output`、`--dataset-info-output`、`--output-dir`、`--report`、`--stdout-log`、`--stderr-log`、`--event-log`、`--log-dir`、`--votes-output` 和 `--summary-output`。
 
-根目录里的生成文件也可能只在跑过命令后才出现，例如 `style_contract.md`、`style_profile.json` 和 `mlflow.db`。生成物可以删除后重建，但删除前要确认没有正在使用它的报告或决策记录。
+根目录里的生成文件也可能只在跑过命令后才出现，例如 `style_contract.md`、`style_profile.json` 和 `mlflow.db`。Stage 5B 起，风格资产的机器门禁文件在 `data_style/`，`style_contract.md` 只用于人工审阅。生成物可以删除后重建，但删除前要确认没有正在使用它的报告、决策记录或 formal SFT 绑定。

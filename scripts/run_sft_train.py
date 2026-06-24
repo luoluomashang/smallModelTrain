@@ -9,6 +9,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from small_model_train.artifact_manifest import file_sha256, summarize_jsonl_artifact
 from small_model_train.preflight_reports import read_preflight_report
 from small_model_train.run_manifest import build_run_manifest, write_run_manifest
 from small_model_train.stage2_adapter import check_adapter_dir
@@ -18,6 +19,7 @@ from small_model_train.stage2_training import (
     run_training_subprocess,
     validate_training_inputs,
 )
+from small_model_train.style_contract import read_style_contract_asset
 
 DEFAULT_MODEL_DIR = r"E:\models\Qwen3-4B-Instruct-2507"
 
@@ -71,6 +73,7 @@ def main() -> int:
     parser.add_argument("--model-report-json", default="reports/model_check_report.json")
     parser.add_argument("--env-report-json", default="reports/training_env_report.json")
     parser.add_argument("--smoke-adapter-dir", default="outputs/sft_smoke")
+    parser.add_argument("--style-contract-json")
     parser.add_argument("--skip-prereq-checks", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -80,6 +83,7 @@ def main() -> int:
         for error in validation["errors"]:
             print(error, file=sys.stderr)
         return 1
+    input_artifacts = validation.get("artifacts", {})
 
     if not args.skip_prereq_checks:
         prerequisites = validate_full_training_prerequisites(
@@ -97,6 +101,27 @@ def main() -> int:
         env_report=args.env_report_json,
         skipped=args.skip_prereq_checks,
     )
+    style_contract_summary = _style_contract_for_manifest(args.style_contract_json)
+    if (
+        style_contract_summary is not None
+        and not style_contract_summary["schema"]["valid"]
+    ):
+        for error in style_contract_summary["schema"]["errors"]:
+            print(error, file=sys.stderr)
+        return 1
+    if not args.dry_run:
+        if style_contract_summary is None:
+            print(
+                "--style-contract-json is required for non-dry SFT training",
+                file=sys.stderr,
+            )
+            return 1
+        if style_contract_summary.get("approval_status") not in {"approved", "frozen"}:
+            print(
+                "style contract approval_status must be approved or frozen for non-dry SFT training",
+                file=sys.stderr,
+            )
+            return 1
 
     run = build_train_run(
         name="sft_v1",
@@ -113,6 +138,24 @@ def main() -> int:
     training_exit_code = int(result["exit_code"])
     adapter_check = _adapter_check_for_run(args.output_dir, args.dry_run, training_exit_code)
     manifest_passed = _manifest_passed(args.dry_run, training_exit_code, adapter_check)
+    sft_summary = summarize_jsonl_artifact(
+        args.sft_dataset,
+        label="sft_dataset",
+        validate_sft_dataset_schema=True,
+    )
+    eval_summary = input_artifacts.get("eval_cards")
+    formal_evidence = (
+        not args.dry_run
+        and training_exit_code == 0
+        and all(report.get("passed") is True for report in preflight_reports.values())
+        and adapter_check.get("passed") is True
+        and sft_summary.get("schema", {}).get("valid") is True
+        and isinstance(eval_summary, dict)
+        and eval_summary.get("schema", {}).get("valid") is True
+        and style_contract_summary is not None
+        and style_contract_summary.get("schema", {}).get("valid") is True
+        and style_contract_summary.get("approval_status") in {"approved", "frozen"}
+    )
     write_run_manifest(
         Path(args.output_dir) / "run_manifest.json",
         build_run_manifest(
@@ -125,6 +168,10 @@ def main() -> int:
             preflight_reports=preflight_reports,
             adapter_check=adapter_check,
             passed=manifest_passed,
+            sft_dataset=sft_summary,
+            eval_cards=eval_summary,
+            style_contract=style_contract_summary,
+            formal_evidence=formal_evidence,
             repo_root=REPO_ROOT,
         ),
     )
@@ -133,6 +180,30 @@ def main() -> int:
         _print_adapter_check_errors(adapter_check)
         return 1
     return training_exit_code
+
+
+def _style_contract_for_manifest(path: str | Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    try:
+        asset = read_style_contract_asset(path)
+    except ValueError as exc:
+        return {
+            "path": str(path),
+            "schema": {
+                "name": "style_contract",
+                "valid": False,
+                "errors": [str(exc)],
+            },
+        }
+    return {
+        "path": str(path),
+        "sha256": file_sha256(path),
+        "style_contract_id": asset["style_contract_id"],
+        "contract_sha256": asset["contract_sha256"],
+        "approval_status": asset["approval_status"],
+        "schema": {"name": "style_contract", "valid": True, "errors": []},
+    }
 
 
 def _preflight_reports_for_manifest(

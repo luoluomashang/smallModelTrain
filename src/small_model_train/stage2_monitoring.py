@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,8 @@ HIGH_SPECIFICITY_ERROR_TYPES = (
     "llamafactory_error",
 )
 
+_EVENT_LOG_LOCK = threading.Lock()
+
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -106,8 +109,9 @@ def append_event(
     if detail is not None:
         row["detail"] = detail
 
-    with event_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    with _EVENT_LOG_LOCK:
+        with event_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def classify_training_error(stderr: str, exit_code: int | None) -> dict[str, str]:

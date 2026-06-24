@@ -314,7 +314,17 @@ def test_build_sft_rows_rejects_draft_cards_in_formal_mode():
     ids=["missing-chapter", "eval-split", "non-a-quality"],
 )
 def test_build_sft_rows_formal_mode_skips_non_sft_candidates_before_approval_gate(card, chapters):
-    assert build_sft_rows([card], chapters, require_approved_cards=True) == []
+    contract = _style_contract_asset("approved")
+
+    assert (
+        build_sft_rows(
+            [card],
+            chapters,
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize("approval_status", [None, "draft", "pending"])
@@ -347,20 +357,39 @@ def test_build_sft_rows_rejects_invalid_style_contract_hash_in_formal_mode(style
 
 @pytest.mark.parametrize("approval_status", ["approved", "frozen"])
 def test_build_sft_rows_accepts_approved_or_frozen_cards_in_formal_mode(approval_status):
-    card = _approved_sft_card(approval_status=approval_status)
+    contract = _style_contract_asset("approved")
+    card = _approved_sft_card(
+        approval_status=approval_status,
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
 
-    rows = build_sft_rows([card], [_train_chapter()], require_approved_cards=True)
+    rows = build_sft_rows(
+        [card],
+        [_train_chapter()],
+        require_approved_cards=True,
+        style_contract=contract,
+    )
 
     assert rows[0]["output"] == "正文"
 
 
 def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_flag(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
+    from small_model_train.style_contract import write_style_contract_asset
+
     cards_path = tmp_path / "cards.jsonl"
     chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
     output_path = tmp_path / "sft.jsonl"
     allowed_output_path = tmp_path / "sft_allowed.jsonl"
     write_jsonl(cards_path, [_approved_sft_card(draft_only=True, approval_status="draft")])
     write_jsonl(chapters_path, [_train_chapter()])
+    contract = _style_contract_asset(
+        "approved",
+        source_sha256=file_sha256(chapters_path),
+    )
+    write_style_contract_asset(contract_path, contract)
 
     result = subprocess.run(
         [
@@ -372,6 +401,8 @@ def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_fl
             str(chapters_path),
             "--output",
             str(output_path),
+            "--style-contract-json",
+            str(contract_path),
         ],
         check=False,
         capture_output=True,
@@ -550,4 +581,271 @@ def test_build_sft_dataset_cli_rejects_dataset_info_same_as_output(tmp_path):
 
     assert result.returncode != 0
     assert "--dataset-info-output must not be the same path as --output" in result.stderr
+    assert not output_path.exists()
+
+
+def _style_contract_asset(
+    status: str = "approved",
+    source_sha256: str = "b" * 64,
+) -> dict:
+    from small_model_train.style_contract import build_style_contract_asset
+
+    return build_style_contract_asset(
+        style_contract_id="contract-v1",
+        approval_status=status,
+        source_corpus={
+            "path": "chapters.jsonl",
+            "sha256": source_sha256,
+            "quality_filter": "quality_tag=A",
+            "row_count": 1,
+            "selected_rows": 1,
+            "split_summary": {"train": 1},
+        },
+        profile_metrics={
+            "chapter_count": 1,
+            "avg_dialogue_ratio": 0.1,
+            "avg_paragraph_chars": 20,
+            "ai_taste": {"phrase_hits": {}, "total_hits": 0, "hits_per_10k_chars": 0},
+        },
+    )
+
+
+def test_build_sft_rows_rejects_pending_style_contract_in_formal_mode():
+    card = _approved_sft_card()
+    contract = _style_contract_asset("pending_review")
+
+    with pytest.raises(ValueError, match="approved or frozen"):
+        build_sft_rows(
+            [card],
+            [_train_chapter()],
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+
+
+def test_build_sft_rows_rejects_pending_style_contract_without_trainable_candidates():
+    card = _approved_sft_card()
+    contract = _style_contract_asset("pending_review")
+
+    with pytest.raises(ValueError, match="approved or frozen"):
+        build_sft_rows(
+            [card],
+            [{**_train_chapter(), "split": "eval"}],
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+
+
+def test_build_sft_rows_rejects_malformed_style_contract_without_trainable_candidates():
+    card = _approved_sft_card()
+    contract = _style_contract_asset("approved")
+    del contract["contract_sha256"]
+
+    with pytest.raises(ValueError, match="missing required fields: contract_sha256"):
+        build_sft_rows(
+            [card],
+            [{**_train_chapter(), "split": "eval"}],
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+
+
+def test_build_sft_rows_rejects_style_contract_hash_mismatch():
+    contract = _style_contract_asset("approved")
+    card = _approved_sft_card(style_contract_sha256="c" * 64)
+
+    with pytest.raises(ValueError, match="style_contract_sha256 mismatch"):
+        build_sft_rows(
+            [card],
+            [_train_chapter()],
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+
+
+def test_build_sft_rows_accepts_matching_approved_style_contract():
+    contract = _style_contract_asset("approved")
+    card = _approved_sft_card(
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
+
+    rows = build_sft_rows(
+        [card],
+        [_train_chapter()],
+        require_approved_cards=True,
+        style_contract=contract,
+    )
+
+    assert rows[0]["output"] == "正文"
+
+
+def test_build_sft_rows_accepts_matching_frozen_style_contract():
+    contract = _style_contract_asset("frozen")
+    card = _approved_sft_card(
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
+
+    rows = build_sft_rows(
+        [card],
+        [_train_chapter()],
+        require_approved_cards=True,
+        style_contract=contract,
+    )
+
+    assert rows[0]["output"] == "正文"
+
+
+def test_build_sft_rows_requires_style_contract_even_without_trainable_candidates():
+    card = _approved_sft_card()
+
+    with pytest.raises(ValueError, match="style contract JSON is required for formal SFT"):
+        build_sft_rows(
+            [card],
+            [{**_train_chapter(), "split": "eval"}],
+            require_approved_cards=True,
+        )
+
+
+def test_build_sft_dataset_cli_requires_style_contract_json_for_formal(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "sft.jsonl"
+    card = _approved_sft_card()
+    write_jsonl(cards_path, [card])
+    write_jsonl(chapters_path, [_train_chapter()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "style contract JSON is required for formal SFT" in result.stderr
+    assert not output_path.exists()
+
+
+def test_build_sft_dataset_cli_rejects_missing_style_contract_json_path(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "missing_style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    card = _approved_sft_card()
+    write_jsonl(cards_path, [card])
+    write_jsonl(chapters_path, [_train_chapter()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--style-contract-json",
+            str(contract_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "style contract JSON not found" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not output_path.exists()
+
+
+def test_build_sft_dataset_cli_accepts_matching_approved_contract(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
+    from small_model_train.style_contract import write_style_contract_asset
+
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    write_jsonl(chapters_path, [_train_chapter()])
+    contract = _style_contract_asset(
+        "approved",
+        source_sha256=file_sha256(chapters_path),
+    )
+    card = _approved_sft_card(
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
+    write_jsonl(cards_path, [card])
+    write_style_contract_asset(contract_path, contract)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--style-contract-json",
+            str(contract_path),
+        ],
+        check=True,
+    )
+
+    assert read_jsonl(output_path)[0]["output"] == "正文"
+
+
+def test_build_sft_dataset_cli_rejects_chapters_hash_mismatch(tmp_path):
+    from small_model_train.style_contract import write_style_contract_asset
+
+    contract = _style_contract_asset("approved", source_sha256="0" * 64)
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    card = _approved_sft_card(
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
+    write_jsonl(cards_path, [card])
+    write_jsonl(chapters_path, [_train_chapter()])
+    write_style_contract_asset(contract_path, contract)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--style-contract-json",
+            str(contract_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "chapters sha256 does not match style contract source_corpus.sha256" in (
+        result.stderr
+    )
+    assert "Traceback" not in result.stderr
     assert not output_path.exists()
