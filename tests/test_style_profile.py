@@ -17,6 +17,34 @@ def test_build_style_profile_counts_core_metrics():
     assert profile["avg_dialogue_ratio"] == 0.5
 
 
+def test_build_style_profile_reports_distributions_and_ai_trace_metrics():
+    rows = [
+        {"id": "a", "quality_tag": "A", "text": "林默点头。空气仿佛凝固了。\n\n“加钱。”"},
+        {"id": "b", "quality_tag": "B", "text": "这行也参与函数级统计。"},
+    ]
+
+    profile = build_style_profile(rows)
+
+    assert profile["chapter_count"] == 2
+    assert profile["chinese_chars"]["min"] > 0
+    assert profile["chinese_chars"]["p50"] > 0
+    assert profile["paragraph_chars"]["avg"] > 0
+    assert profile["dialogue_ratio"]["avg"] >= 0
+    assert profile["sentence_chars"]["p90"] > 0
+    assert profile["punctuation_density"]["。"] > 0
+    assert profile["ai_taste"]["phrase_hits"]["空气仿佛凝固了"] == 1
+    assert profile["source_filter"]["selected_rows"] == 2
+
+
+def test_build_style_profile_handles_empty_input():
+    profile = build_style_profile([])
+
+    assert profile["chapter_count"] == 0
+    assert profile["chinese_chars"]["avg"] == 0
+    assert profile["paragraph_chars"]["p90"] == 0
+    assert profile["ai_taste"]["total_hits"] == 0
+
+
 def test_render_style_contract_contains_project_rules():
     contract = render_style_contract({"avg_dialogue_ratio": 0.5, "avg_paragraph_chars": 8})
     assert "只输出正文" in contract
