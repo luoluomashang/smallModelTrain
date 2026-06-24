@@ -109,6 +109,19 @@ def main() -> int:
         for error in style_contract_summary["schema"]["errors"]:
             print(error, file=sys.stderr)
         return 1
+    if not args.dry_run:
+        if style_contract_summary is None:
+            print(
+                "--style-contract-json is required for non-dry SFT training",
+                file=sys.stderr,
+            )
+            return 1
+        if style_contract_summary.get("approval_status") not in {"approved", "frozen"}:
+            print(
+                "style contract approval_status must be approved or frozen for non-dry SFT training",
+                file=sys.stderr,
+            )
+            return 1
 
     run = build_train_run(
         name="sft_v1",
@@ -128,7 +141,7 @@ def main() -> int:
     sft_summary = summarize_jsonl_artifact(
         args.sft_dataset,
         label="sft_dataset",
-        validate_execution_card_schema=False,
+        validate_sft_dataset_schema=True,
     )
     eval_summary = input_artifacts.get("eval_cards")
     formal_evidence = (

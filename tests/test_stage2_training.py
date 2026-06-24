@@ -37,6 +37,16 @@ def _execution_card(sample_id: str = "case1") -> dict[str, Any]:
     }
 
 
+def _sft_row(**overrides: Any) -> dict[str, str]:
+    row = {
+        "instruction": "Write the next chapter.",
+        "input": "Style: short, high-conflict beats.",
+        "output": "The door opened. The wager came due.",
+    }
+    row.update(overrides)
+    return row
+
+
 def test_summarize_jsonl_artifact_records_sha_rows_and_schema(tmp_path: Path):
     from small_model_train.artifact_manifest import summarize_jsonl_artifact
 
@@ -76,6 +86,42 @@ def test_summarize_jsonl_artifact_rejects_raw_eval_cards_when_schema_required(
 
     assert summary["schema"]["valid"] is False
     assert "missing execution-card fields" in "\n".join(summary["schema"]["errors"])
+
+
+def test_summarize_jsonl_artifact_accepts_valid_sft_dataset_schema(tmp_path: Path):
+    from small_model_train.artifact_manifest import summarize_jsonl_artifact
+
+    dataset_path = tmp_path / "sft.jsonl"
+    write_jsonl(dataset_path, [_sft_row()])
+
+    summary = summarize_jsonl_artifact(
+        dataset_path,
+        label="sft_dataset",
+        validate_sft_dataset_schema=True,
+    )
+
+    assert summary["row_count"] == 1
+    assert summary["schema"] == {"name": "sft_dataset", "valid": True, "errors": []}
+
+
+def test_summarize_jsonl_artifact_rejects_invalid_sft_dataset_schema(
+    tmp_path: Path,
+):
+    from small_model_train.artifact_manifest import summarize_jsonl_artifact
+
+    dataset_path = tmp_path / "sft.jsonl"
+    write_jsonl(dataset_path, [{}])
+
+    summary = summarize_jsonl_artifact(
+        dataset_path,
+        label="sft_dataset",
+        validate_sft_dataset_schema=True,
+    )
+
+    assert summary["row_count"] == 1
+    assert summary["schema"]["name"] == "sft_dataset"
+    assert summary["schema"]["valid"] is False
+    assert "missing/invalid SFT fields" in "\n".join(summary["schema"]["errors"])
 
 
 def test_summarize_jsonl_artifact_streams_non_schema_summary(
@@ -990,12 +1036,16 @@ def test_run_sft_train_dry_run_writes_manifest_without_output_adapter(
     tmp_path: Path,
 ):
     from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
 
     sft_dataset = tmp_path / "data" / "sft.jsonl"
     eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("approved")
+    write_style_contract_asset(contract_path, contract)
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"
@@ -1077,7 +1127,7 @@ def test_run_sft_train_dry_run_records_style_contract_provenance(
     eval_cards = tmp_path / "data" / "eval.jsonl"
     contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
     contract = _style_contract_asset("approved")
     write_style_contract_asset(contract_path, contract)
@@ -1148,9 +1198,6 @@ def test_run_sft_train_dry_run_records_style_contract_provenance(
     [
         ("approved", True),
         ("frozen", True),
-        ("pending_review", False),
-        ("rejected", False),
-        ("draft", False),
     ],
 )
 def test_run_sft_train_formal_evidence_requires_approved_or_frozen_style_contract(
@@ -1166,7 +1213,7 @@ def test_run_sft_train_formal_evidence_requires_approved_or_frozen_style_contrac
     eval_cards = tmp_path / "data" / "eval.jsonl"
     contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
     contract = _style_contract_asset(approval_status)
     write_style_contract_asset(contract_path, contract)
@@ -1231,6 +1278,112 @@ def test_run_sft_train_formal_evidence_requires_approved_or_frozen_style_contrac
     assert manifest["formal_evidence"] is expected_formal_evidence
 
 
+def test_run_sft_train_rejects_pending_style_contract_before_command(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
+    sft_dataset.parent.mkdir(parents=True)
+    write_jsonl(sft_dataset, [_sft_row()])
+    write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("pending_review")
+    write_style_contract_asset(contract_path, contract)
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+
+    def fail_build_train_run(**_kwargs):
+        raise AssertionError("style contract gate must fail before command construction")
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fail_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(contract_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert run_sft_train.main() == 1
+    assert "approved or frozen" in capsys.readouterr().err
+    assert not (output_dir / "run_manifest.json").exists()
+
+
+def test_run_sft_train_rejects_missing_style_contract_arg_before_command(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    write_jsonl(sft_dataset, [_sft_row()])
+    write_jsonl(eval_cards, [_execution_card("case1")])
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+
+    def fail_build_train_run(**_kwargs):
+        raise AssertionError("style contract gate must fail before command construction")
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fail_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert run_sft_train.main() == 1
+    assert "--style-contract-json is required" in capsys.readouterr().err
+    assert not (output_dir / "run_manifest.json").exists()
+
+
 def test_run_sft_train_formal_evidence_requires_passed_preflight_reports(
     monkeypatch,
     tmp_path: Path,
@@ -1242,7 +1395,7 @@ def test_run_sft_train_formal_evidence_requires_passed_preflight_reports(
     eval_cards = tmp_path / "data" / "eval.jsonl"
     contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
     contract = _style_contract_asset("approved")
     write_style_contract_asset(contract_path, contract)
@@ -1507,12 +1660,16 @@ def test_run_sft_train_skip_prereqs_marks_preflights_skipped(
     tmp_path: Path,
 ):
     from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
 
     sft_dataset = tmp_path / "data" / "sft.jsonl"
     eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("approved")
+    write_style_contract_asset(contract_path, contract)
 
     output_dir = tmp_path / "outputs" / "sft_v1"
     config_path = output_dir / "training_config_snapshot.yaml"
@@ -1577,12 +1734,16 @@ def test_run_sft_train_writes_manifest_when_training_exits_nonzero(
     tmp_path: Path,
 ):
     from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
 
     sft_dataset = tmp_path / "data" / "sft.jsonl"
     eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("approved")
+    write_style_contract_asset(contract_path, contract)
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"
@@ -1635,6 +1796,8 @@ def test_run_sft_train_writes_manifest_when_training_exits_nonzero(
             str(env_report),
             "--smoke-adapter-dir",
             str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(contract_path),
         ],
     )
 
@@ -1653,12 +1816,16 @@ def test_run_sft_train_formal_evidence_requires_valid_sft_schema(
     tmp_path: Path,
 ):
     from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
 
     sft_dataset = tmp_path / "data" / "sft.jsonl"
     eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{not json\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [{}])
     write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("approved")
+    write_style_contract_asset(contract_path, contract)
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"
@@ -1710,6 +1877,8 @@ def test_run_sft_train_formal_evidence_requires_valid_sft_schema(
             str(env_report),
             "--smoke-adapter-dir",
             str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(contract_path),
         ],
     )
 
@@ -1720,7 +1889,9 @@ def test_run_sft_train_formal_evidence_requires_valid_sft_schema(
     assert manifest["adapter_check"]["passed"] is True
     assert manifest["eval_cards"]["schema"]["valid"] is True
     assert manifest["sft_dataset"]["schema"]["valid"] is False
-    assert "not valid JSON" in "\n".join(manifest["sft_dataset"]["schema"]["errors"])
+    assert "missing/invalid SFT fields" in "\n".join(
+        manifest["sft_dataset"]["schema"]["errors"]
+    )
     assert manifest["formal_evidence"] is False
 
 
@@ -1729,12 +1900,16 @@ def test_run_sft_train_writes_failed_manifest_when_adapter_invalid(
     tmp_path: Path,
 ):
     from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
 
     sft_dataset = tmp_path / "data" / "sft.jsonl"
     eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
     sft_dataset.parent.mkdir(parents=True)
-    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(sft_dataset, [_sft_row()])
     write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("approved")
+    write_style_contract_asset(contract_path, contract)
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"
@@ -1787,6 +1962,8 @@ def test_run_sft_train_writes_failed_manifest_when_adapter_invalid(
             str(env_report),
             "--smoke-adapter-dir",
             str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(contract_path),
         ],
     )
 

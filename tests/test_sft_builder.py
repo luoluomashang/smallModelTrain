@@ -375,9 +375,9 @@ def test_build_sft_rows_accepts_approved_or_frozen_cards_in_formal_mode(approval
 
 
 def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_flag(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
     from small_model_train.style_contract import write_style_contract_asset
 
-    contract = _style_contract_asset("approved")
     cards_path = tmp_path / "cards.jsonl"
     chapters_path = tmp_path / "chapters.jsonl"
     contract_path = tmp_path / "style_contract.json"
@@ -385,6 +385,10 @@ def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_fl
     allowed_output_path = tmp_path / "sft_allowed.jsonl"
     write_jsonl(cards_path, [_approved_sft_card(draft_only=True, approval_status="draft")])
     write_jsonl(chapters_path, [_train_chapter()])
+    contract = _style_contract_asset(
+        "approved",
+        source_sha256=file_sha256(chapters_path),
+    )
     write_style_contract_asset(contract_path, contract)
 
     result = subprocess.run(
@@ -580,7 +584,10 @@ def test_build_sft_dataset_cli_rejects_dataset_info_same_as_output(tmp_path):
     assert not output_path.exists()
 
 
-def _style_contract_asset(status: str = "approved") -> dict:
+def _style_contract_asset(
+    status: str = "approved",
+    source_sha256: str = "b" * 64,
+) -> dict:
     from small_model_train.style_contract import build_style_contract_asset
 
     return build_style_contract_asset(
@@ -588,7 +595,7 @@ def _style_contract_asset(status: str = "approved") -> dict:
         approval_status=status,
         source_corpus={
             "path": "chapters.jsonl",
-            "sha256": "b" * 64,
+            "sha256": source_sha256,
             "quality_filter": "quality_tag=A",
             "row_count": 1,
             "selected_rows": 1,
@@ -764,19 +771,23 @@ def test_build_sft_dataset_cli_rejects_missing_style_contract_json_path(tmp_path
 
 
 def test_build_sft_dataset_cli_accepts_matching_approved_contract(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
     from small_model_train.style_contract import write_style_contract_asset
 
-    contract = _style_contract_asset("approved")
     cards_path = tmp_path / "cards.jsonl"
     chapters_path = tmp_path / "chapters.jsonl"
     contract_path = tmp_path / "style_contract.json"
     output_path = tmp_path / "sft.jsonl"
+    write_jsonl(chapters_path, [_train_chapter()])
+    contract = _style_contract_asset(
+        "approved",
+        source_sha256=file_sha256(chapters_path),
+    )
     card = _approved_sft_card(
         style_contract_id=contract["style_contract_id"],
         style_contract_sha256=contract["contract_sha256"],
     )
     write_jsonl(cards_path, [card])
-    write_jsonl(chapters_path, [_train_chapter()])
     write_style_contract_asset(contract_path, contract)
 
     subprocess.run(
@@ -796,3 +807,45 @@ def test_build_sft_dataset_cli_accepts_matching_approved_contract(tmp_path):
     )
 
     assert read_jsonl(output_path)[0]["output"] == "正文"
+
+
+def test_build_sft_dataset_cli_rejects_chapters_hash_mismatch(tmp_path):
+    from small_model_train.style_contract import write_style_contract_asset
+
+    contract = _style_contract_asset("approved", source_sha256="0" * 64)
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    card = _approved_sft_card(
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
+    write_jsonl(cards_path, [card])
+    write_jsonl(chapters_path, [_train_chapter()])
+    write_style_contract_asset(contract_path, contract)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--style-contract-json",
+            str(contract_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "chapters sha256 does not match style contract source_corpus.sha256" in (
+        result.stderr
+    )
+    assert "Traceback" not in result.stderr
+    assert not output_path.exists()

@@ -10,6 +10,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from small_model_train.artifact_manifest import file_sha256
 from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.sft_builder import build_sft_rows
 from small_model_train.style_contract import read_style_contract_asset
@@ -47,6 +48,13 @@ def main() -> None:
         style_contract = None
         if args.style_contract_json:
             style_contract = read_style_contract_asset(args.style_contract_json)
+            expected_chapters_sha256 = style_contract["source_corpus"]["sha256"]
+            actual_chapters_sha256 = file_sha256(args.chapters)
+            if actual_chapters_sha256 != expected_chapters_sha256:
+                raise ValueError(
+                    "chapters sha256 does not match style contract "
+                    "source_corpus.sha256"
+                )
         elif not args.allow_draft_cards:
             raise ValueError("style contract JSON is required for formal SFT")
 
