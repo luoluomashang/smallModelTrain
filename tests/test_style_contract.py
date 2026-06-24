@@ -136,6 +136,16 @@ def test_recomputed_hash_asset_with_changed_prompt_output_is_rejected():
         validate_style_contract_asset(asset)
 
 
+@pytest.mark.parametrize("field", ["row_count", "quality_filter", "split_summary"])
+def test_recomputed_hash_asset_missing_source_corpus_metadata_is_rejected(field: str):
+    asset = _asset()
+    del asset["source_corpus"][field]
+    asset["contract_sha256"] = canonical_style_contract_sha256(asset)
+
+    with pytest.raises(ValueError, match=f"source_corpus.{field}"):
+        validate_style_contract_asset(asset)
+
+
 def test_invalid_contract_sha256_format_is_rejected_before_mismatch():
     asset = _asset()
     asset["contract_sha256"] = "g" * 64

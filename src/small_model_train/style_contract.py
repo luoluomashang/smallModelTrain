@@ -238,16 +238,34 @@ def _require_non_empty_string(section_name: str, section: dict[str, Any], field:
         raise ValueError(f"{section_name}.{field} must be a non-empty string")
 
 
+def _require_non_negative_int(section_name: str, section: dict[str, Any], field: str) -> None:
+    value = section.get(field)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{section_name}.{field} must be an int >= 0")
+
+
 def _validate_source_corpus(source_corpus: dict[str, Any]) -> None:
-    _require_fields("source_corpus", source_corpus, ("path", "sha256", "selected_rows"))
+    _require_fields(
+        "source_corpus",
+        source_corpus,
+        (
+            "path",
+            "sha256",
+            "quality_filter",
+            "row_count",
+            "selected_rows",
+            "split_summary",
+        ),
+    )
     if not isinstance(source_corpus["path"], str):
         raise ValueError("source_corpus.path must be a string")
     if not _is_lower_hex_sha256(source_corpus["sha256"]):
         raise ValueError("source_corpus.sha256 must be a 64-character lowercase hex string")
-    if not isinstance(source_corpus["selected_rows"], int) or isinstance(
-        source_corpus["selected_rows"], bool
-    ):
-        raise ValueError("source_corpus.selected_rows must be an int")
+    _require_non_empty_string("source_corpus", source_corpus, "quality_filter")
+    _require_non_negative_int("source_corpus", source_corpus, "row_count")
+    _require_non_negative_int("source_corpus", source_corpus, "selected_rows")
+    if not isinstance(source_corpus["split_summary"], dict):
+        raise ValueError("source_corpus.split_summary must be a JSON object")
 
 
 def _validate_prompt_rules(prompt_rules: dict[str, Any]) -> None:
