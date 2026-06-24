@@ -9,6 +9,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from small_model_train.artifact_manifest import summarize_jsonl_artifact
 from small_model_train.preflight_reports import read_preflight_report
 from small_model_train.run_manifest import build_run_manifest, write_run_manifest
 from small_model_train.stage2_adapter import check_adapter_dir
@@ -80,6 +81,7 @@ def main() -> int:
         for error in validation["errors"]:
             print(error, file=sys.stderr)
         return 1
+    input_artifacts = validation.get("artifacts", {})
 
     if not args.skip_prereq_checks:
         prerequisites = validate_full_training_prerequisites(
@@ -113,6 +115,19 @@ def main() -> int:
     training_exit_code = int(result["exit_code"])
     adapter_check = _adapter_check_for_run(args.output_dir, args.dry_run, training_exit_code)
     manifest_passed = _manifest_passed(args.dry_run, training_exit_code, adapter_check)
+    sft_summary = summarize_jsonl_artifact(
+        args.sft_dataset,
+        label="sft_dataset",
+        validate_execution_card_schema=False,
+    )
+    eval_summary = input_artifacts.get("eval_cards")
+    formal_evidence = (
+        not args.dry_run
+        and training_exit_code == 0
+        and adapter_check.get("passed") is True
+        and isinstance(eval_summary, dict)
+        and eval_summary.get("schema", {}).get("valid") is True
+    )
     write_run_manifest(
         Path(args.output_dir) / "run_manifest.json",
         build_run_manifest(
@@ -125,6 +140,9 @@ def main() -> int:
             preflight_reports=preflight_reports,
             adapter_check=adapter_check,
             passed=manifest_passed,
+            sft_dataset=sft_summary,
+            eval_cards=eval_summary,
+            formal_evidence=formal_evidence,
             repo_root=REPO_ROOT,
         ),
     )

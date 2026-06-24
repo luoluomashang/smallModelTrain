@@ -7,12 +7,73 @@ from typing import Any
 import pytest
 
 from small_model_train import stage2_training
+from small_model_train.io_utils import write_jsonl
 from small_model_train.stage2_training import (
     build_train_run,
     run_training_dry,
     run_training_subprocess,
     validate_training_inputs,
 )
+
+
+def _execution_card(sample_id: str = "case1") -> dict[str, Any]:
+    return {
+        "id": sample_id,
+        "target_platform": "hybrid_fanqie_qidian",
+        "genre_tags": ["xuanhuan", "system"],
+        "style_contract": "短句推进，强冲突。",
+        "chapter_goal": "主角发现任务并反击。",
+        "chapter_structure": [
+            {"step": 1, "name": "压迫", "goal": "建立冲突", "estimated_chars": "800"}
+        ],
+        "conflict_beat": "旧势力当众羞辱主角。",
+        "payoff_beat": "主角用证据完成反击。",
+        "must_include": ["系统面板"],
+        "must_not_include": ["女频误会流"],
+        "ending_hook": "新的任务出现。",
+        "target_word_count": "2000-2500中文汉字",
+    }
+
+
+def test_summarize_jsonl_artifact_records_sha_rows_and_schema(tmp_path: Path):
+    from small_model_train.artifact_manifest import summarize_jsonl_artifact
+
+    cards_path = tmp_path / "eval_cards.jsonl"
+    write_jsonl(cards_path, [_execution_card("case1")])
+
+    summary = summarize_jsonl_artifact(
+        cards_path,
+        label="eval_cards",
+        validate_execution_card_schema=True,
+    )
+
+    assert summary["path"] == str(cards_path)
+    assert summary["sha256"]
+    assert summary["row_count"] == 1
+    assert summary["schema"]["name"] == "execution_cards"
+    assert summary["schema"]["valid"] is True
+    assert summary["schema"]["errors"] == []
+
+
+def test_summarize_jsonl_artifact_rejects_raw_eval_cards_when_schema_required(
+    tmp_path: Path,
+):
+    from small_model_train.artifact_manifest import summarize_jsonl_artifact
+
+    raw_cards = tmp_path / "eval_cards_50.jsonl"
+    write_jsonl(
+        raw_cards,
+        [{"id": "case1", "text": "原文", "quality_tag": "A", "split": "eval"}],
+    )
+
+    summary = summarize_jsonl_artifact(
+        raw_cards,
+        label="eval_cards",
+        validate_execution_card_schema=True,
+    )
+
+    assert summary["schema"]["valid"] is False
+    assert "missing execution-card fields" in "\n".join(summary["schema"]["errors"])
 
 
 def test_validate_training_inputs_reports_missing_files(tmp_path: Path):
@@ -700,6 +761,95 @@ def test_run_sft_train_rejects_legacy_env_report_arg(monkeypatch):
     assert excinfo.value.code == 2
 
 
+def test_run_sft_train_dry_run_rejects_raw_eval_cards_before_manifest(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    raw_eval_cards = tmp_path / "data" / "eval_cards_50.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(
+        raw_eval_cards,
+        [{"id": "case1", "text": "原文", "quality_tag": "A", "split": "eval"}],
+    )
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+
+    def fail_build_train_run(**_kwargs):
+        raise AssertionError("schema gate must fail before command construction")
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fail_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--dry-run",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(raw_eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert run_sft_train.main() == 1
+    assert not (output_dir / "run_manifest.json").exists()
+
+
+def test_run_sft_smoke_rejects_raw_eval_cards_before_command(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_smoke
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    raw_eval_cards = tmp_path / "data" / "eval_cards_50.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(
+        raw_eval_cards,
+        [{"id": "case1", "text": "原文", "quality_tag": "A", "split": "eval"}],
+    )
+
+    def fail_build_train_run(**_kwargs):
+        raise AssertionError("schema gate must fail before smoke command construction")
+
+    monkeypatch.setattr(run_sft_smoke, "build_train_run", fail_build_train_run)
+    monkeypatch.setattr(
+        run_sft_smoke.sys,
+        "argv",
+        [
+            "run_sft_smoke.py",
+            "--dry-run",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(raw_eval_cards),
+            "--output-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+        ],
+    )
+
+    assert run_sft_smoke.main() == 1
+
+
 def test_run_sft_train_dry_run_writes_manifest_without_output_adapter(
     monkeypatch,
     tmp_path: Path,
@@ -710,7 +860,7 @@ def test_run_sft_train_dry_run_writes_manifest_without_output_adapter(
     eval_cards = tmp_path / "data" / "eval.jsonl"
     sft_dataset.parent.mkdir(parents=True)
     sft_dataset.write_text("{}\n", encoding="utf-8")
-    eval_cards.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"
@@ -776,6 +926,9 @@ def test_run_sft_train_dry_run_writes_manifest_without_output_adapter(
     assert manifest["adapter_check"]["passed"] is False
     assert manifest["adapter_check"]["reason"] == "dry-run does not produce an adapter"
     assert manifest["passed"] is True
+    assert manifest["sft_dataset"]["row_count"] == 1
+    assert manifest["eval_cards"]["schema"]["valid"] is True
+    assert manifest["formal_evidence"] is False
 
 
 def test_run_sft_train_skip_prereqs_marks_preflights_skipped(
@@ -788,7 +941,7 @@ def test_run_sft_train_skip_prereqs_marks_preflights_skipped(
     eval_cards = tmp_path / "data" / "eval.jsonl"
     sft_dataset.parent.mkdir(parents=True)
     sft_dataset.write_text("{}\n", encoding="utf-8")
-    eval_cards.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
 
     output_dir = tmp_path / "outputs" / "sft_v1"
     config_path = output_dir / "training_config_snapshot.yaml"
@@ -858,7 +1011,7 @@ def test_run_sft_train_writes_manifest_when_training_exits_nonzero(
     eval_cards = tmp_path / "data" / "eval.jsonl"
     sft_dataset.parent.mkdir(parents=True)
     sft_dataset.write_text("{}\n", encoding="utf-8")
-    eval_cards.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"
@@ -934,7 +1087,7 @@ def test_run_sft_train_writes_failed_manifest_when_adapter_invalid(
     eval_cards = tmp_path / "data" / "eval.jsonl"
     sft_dataset.parent.mkdir(parents=True)
     sft_dataset.write_text("{}\n", encoding="utf-8")
-    eval_cards.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
 
     model_report = tmp_path / "reports" / "model.json"
     env_report = tmp_path / "reports" / "env.json"

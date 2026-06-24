@@ -16,6 +16,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
+from small_model_train.artifact_manifest import summarize_jsonl_artifact
 from small_model_train.stage2_config import (
     build_llamafactory_command,
     make_training_snapshot,
@@ -58,17 +59,24 @@ def validate_training_inputs(
     eval_cards: str | Path,
 ) -> dict[str, Any]:
     errors = []
-    for label, raw_path in (
-        ("SFT dataset", sft_dataset),
-        ("eval cards", eval_cards),
-    ):
-        path = Path(raw_path)
-        if not path.exists():
-            errors.append(f"{label} is missing: {path}")
-        elif path.stat().st_size == 0:
-            errors.append(f"{label} is empty: {path}")
+    sft_path = Path(sft_dataset)
+    if not sft_path.exists():
+        errors.append(f"SFT dataset is missing: {sft_path}")
+    elif sft_path.stat().st_size == 0:
+        errors.append(f"SFT dataset is empty: {sft_path}")
 
-    return {"passed": not errors, "errors": errors}
+    eval_summary = summarize_jsonl_artifact(
+        eval_cards,
+        label="eval cards",
+        validate_execution_card_schema=True,
+    )
+    errors.extend(eval_summary["schema"]["errors"])
+
+    return {
+        "passed": not errors,
+        "errors": errors,
+        "artifacts": {"eval_cards": eval_summary},
+    }
 
 
 def build_train_run(

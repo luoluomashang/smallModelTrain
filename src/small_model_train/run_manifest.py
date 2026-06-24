@@ -34,6 +34,10 @@ def build_run_manifest(
     preflight_reports: dict[str, Any],
     adapter_check: dict[str, Any],
     passed: bool,
+    sft_dataset: dict[str, Any] | None = None,
+    eval_cards: dict[str, Any] | None = None,
+    style_contract: dict[str, Any] | None = None,
+    formal_evidence: bool = False,
     repo_root: str | Path | None = None,
 ) -> dict[str, Any]:
     return {
@@ -48,6 +52,10 @@ def build_run_manifest(
         "config_path": str(config_path),
         "preflight_reports": preflight_reports,
         "adapter_check": adapter_check,
+        "sft_dataset": sft_dataset,
+        "eval_cards": eval_cards,
+        "style_contract": style_contract,
+        "formal_evidence": bool(formal_evidence),
         "passed": bool(passed),
     }
 
