@@ -65,13 +65,8 @@ def _require_approved_card(card: dict) -> None:
 
 
 def _require_card_matches_style_contract(card: dict, style_contract: dict[str, Any]) -> None:
-    contract = validate_style_contract_asset(style_contract)
+    contract = style_contract
     card_id = card.get("id", "<missing id>")
-    if not is_contract_approved_for_formal_sft(contract):
-        raise ValueError(
-            "style contract approval_status must be approved or frozen for formal SFT: "
-            f"{contract['style_contract_id']}"
-        )
     if card.get("style_contract_id") != contract["style_contract_id"]:
         raise ValueError(
             "style_contract_id mismatch for formal SFT: "
@@ -90,6 +85,15 @@ def build_sft_rows(
     require_approved_cards: bool = False,
     style_contract: dict[str, Any] | None = None,
 ) -> list[dict]:
+    formal_style_contract = None
+    if require_approved_cards and style_contract is not None:
+        formal_style_contract = validate_style_contract_asset(style_contract)
+        if not is_contract_approved_for_formal_sft(formal_style_contract):
+            raise ValueError(
+                "style contract approval_status must be approved or frozen for formal SFT: "
+                f"{formal_style_contract['style_contract_id']}"
+            )
+
     chapter_by_id = {chapter["id"]: chapter for chapter in chapters}
     rows: list[dict] = []
     for card in cards:
@@ -99,10 +103,8 @@ def build_sft_rows(
             continue
         if require_approved_cards:
             _require_approved_card(card)
-        if style_contract is not None:
-            _require_card_matches_style_contract(card, style_contract)
-        elif require_approved_cards:
-            raise ValueError("style contract JSON is required for formal SFT")
+            if formal_style_contract is not None:
+                _require_card_matches_style_contract(card, formal_style_contract)
         rows.append(
             {
                 "instruction": INSTRUCTION,

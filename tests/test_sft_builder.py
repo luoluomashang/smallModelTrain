@@ -616,6 +616,33 @@ def test_build_sft_rows_rejects_pending_style_contract_in_formal_mode():
         )
 
 
+def test_build_sft_rows_rejects_pending_style_contract_without_trainable_candidates():
+    card = _approved_sft_card()
+    contract = _style_contract_asset("pending_review")
+
+    with pytest.raises(ValueError, match="approved or frozen"):
+        build_sft_rows(
+            [card],
+            [{**_train_chapter(), "split": "eval"}],
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+
+
+def test_build_sft_rows_rejects_malformed_style_contract_without_trainable_candidates():
+    card = _approved_sft_card()
+    contract = _style_contract_asset("approved")
+    del contract["contract_sha256"]
+
+    with pytest.raises(ValueError, match="missing required fields: contract_sha256"):
+        build_sft_rows(
+            [card],
+            [{**_train_chapter(), "split": "eval"}],
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+
+
 def test_build_sft_rows_rejects_style_contract_hash_mismatch():
     contract = _style_contract_asset("approved")
     card = _approved_sft_card(style_contract_sha256="c" * 64)
