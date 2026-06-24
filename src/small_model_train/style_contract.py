@@ -259,6 +259,8 @@ def _validate_prompt_rules(prompt_rules: dict[str, Any]) -> None:
     _require_non_empty_string("prompt_rules", prompt_rules, "system_role")
     _require_non_empty_string("prompt_rules", prompt_rules, "style_contract_text")
     _require_non_empty_string("prompt_rules", prompt_rules, "output")
+    if prompt_rules["output"] != OUTPUT_RULE:
+        raise ValueError("prompt_rules.output must match the required output rule")
 
 
 def _validate_ai_taste_guardrails(guardrails: dict[str, Any]) -> None:

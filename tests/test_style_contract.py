@@ -112,7 +112,7 @@ def test_invalid_approval_status_is_rejected(status: str):
 
 def test_contract_hash_mismatch_is_rejected():
     asset = _asset()
-    asset["prompt_rules"]["output"] = "tampered"
+    asset["prompt_rules"]["style_contract_text"] = "tampered"
 
     with pytest.raises(ValueError, match="contract_sha256 mismatch"):
         validate_style_contract_asset(asset)
@@ -121,6 +121,15 @@ def test_contract_hash_mismatch_is_rejected():
 def test_recomputed_hash_asset_missing_prompt_output_is_rejected():
     asset = _asset()
     del asset["prompt_rules"]["output"]
+    asset["contract_sha256"] = canonical_style_contract_sha256(asset)
+
+    with pytest.raises(ValueError, match="prompt_rules.output"):
+        validate_style_contract_asset(asset)
+
+
+def test_recomputed_hash_asset_with_changed_prompt_output_is_rejected():
+    asset = _asset()
+    asset["prompt_rules"]["output"] = "只输出正文，但可以附加解释。"
     asset["contract_sha256"] = canonical_style_contract_sha256(asset)
 
     with pytest.raises(ValueError, match="prompt_rules.output"):
