@@ -50,12 +50,45 @@ def _asset(status: str = "pending_review") -> dict:
     )
 
 
+def test_build_style_contract_asset_deep_copies_source_and_profile_inputs():
+    source_corpus = {
+        "path": "data_clean/chapters_split.jsonl",
+        "sha256": "a" * 64,
+        "quality_filter": "quality_tag=A",
+        "row_count": 2,
+        "selected_rows": 2,
+        "split_summary": {"train": 2},
+    }
+    profile_metrics = _profile()
+    asset = build_style_contract_asset(
+        style_contract_id="author_main_v1",
+        approval_status="pending_review",
+        source_corpus=source_corpus,
+        profile_metrics=profile_metrics,
+        author_notes="",
+        created_at="2026-06-24T00:00:00+00:00",
+    )
+    original_sha256 = asset["contract_sha256"]
+
+    source_corpus["selected_rows"] = 999
+    source_corpus["split_summary"]["train"] = 999
+    profile_metrics["ai_taste"]["phrase_hits"]["新增套话"] = 12
+
+    assert asset["source_corpus"]["selected_rows"] == 2
+    assert asset["source_corpus"]["split_summary"]["train"] == 2
+    assert asset["profile_metrics"]["ai_taste"]["phrase_hits"] == {"空气仿佛凝固了": 0}
+    assert asset["ai_taste_guardrails"]["banned_phrases"] == ["空气仿佛凝固了"]
+    assert canonical_style_contract_sha256(asset) == original_sha256
+    assert validate_style_contract_asset(asset) == asset
+
+
 def test_build_style_contract_asset_defaults_to_hash_bound_pending_review():
     asset = _asset()
 
     assert asset["schema_version"] == 1
     assert asset["style_contract_id"] == "author_main_v1"
     assert asset["approval_status"] == "pending_review"
+    assert isinstance(asset["prompt_rules"]["style_contract_text"], str)
     assert len(asset["contract_sha256"]) == 64
     assert canonical_style_contract_sha256(asset) == asset["contract_sha256"]
     assert validate_style_contract_asset(asset) == asset
@@ -85,6 +118,23 @@ def test_contract_hash_mismatch_is_rejected():
         validate_style_contract_asset(asset)
 
 
+def test_recomputed_hash_asset_missing_prompt_output_is_rejected():
+    asset = _asset()
+    del asset["prompt_rules"]["output"]
+    asset["contract_sha256"] = canonical_style_contract_sha256(asset)
+
+    with pytest.raises(ValueError, match="prompt_rules.output"):
+        validate_style_contract_asset(asset)
+
+
+def test_invalid_contract_sha256_format_is_rejected_before_mismatch():
+    asset = _asset()
+    asset["contract_sha256"] = "g" * 64
+
+    with pytest.raises(ValueError, match="contract_sha256.*lowercase hex"):
+        validate_style_contract_asset(asset)
+
+
 def test_style_contract_read_write_roundtrip(tmp_path: Path):
     path = tmp_path / "style_contract.json"
     asset = _asset("approved")
@@ -93,6 +143,35 @@ def test_style_contract_read_write_roundtrip(tmp_path: Path):
     loaded = read_style_contract_asset(path)
 
     assert loaded == asset
+
+
+def test_write_style_contract_asset_is_deterministic_for_reordered_dicts(tmp_path: Path):
+    asset = build_style_contract_asset(
+        style_contract_id="author_main_v1",
+        approval_status="approved",
+        source_corpus={
+            "selected_rows": 2,
+            "split_summary": {"train": 2},
+            "row_count": 2,
+            "quality_filter": "quality_tag=A",
+            "sha256": "a" * 64,
+            "path": "data_clean/chapters_split.jsonl",
+        },
+        profile_metrics=_profile(),
+        author_notes="",
+        created_at="2026-06-24T00:00:00+00:00",
+    )
+    reordered = {key: asset[key] for key in reversed(asset)}
+    reordered["source_corpus"] = {
+        key: asset["source_corpus"][key] for key in reversed(asset["source_corpus"])
+    }
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+
+    write_style_contract_asset(first_path, asset)
+    write_style_contract_asset(second_path, reordered)
+
+    assert first_path.read_text(encoding="utf-8") == second_path.read_text(encoding="utf-8")
 
 
 def test_render_style_contract_markdown_is_human_reviewable():
