@@ -278,3 +278,5 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - Stage 3：真实数据接入和 readiness 证据，不直接追求最终训练质量。
 - Stage 4：固定 50 卡 smoke training 和评测决策。
 - Stage 4.1：长生成质量、预算和审阅门槛。
+- Stage 5A：证据链修正，要求 preflight JSON、raw-first eval、raw scoring、manifest 和 draft/formal 卡门禁可追踪。
+- Stage 5B：StyleContract 闭环，formal SFT 必须绑定 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，`style_contract.md` 只用于人工审阅。

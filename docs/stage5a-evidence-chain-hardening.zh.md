@@ -55,14 +55,16 @@ python scripts/run_agent_review.py --cards data_cards/eval_execution_cards_50.js
 formal SFT 构建数据时不要加 `--allow-draft-cards`：
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json
+python scripts/build_sft_dataset.py --cards data_cards/chapter_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json
 ```
 
 formal training 会读取 JSON preflight，并在输出目录写 run manifest：
 
 ```powershell
-python scripts/run_sft_train.py --config configs/sft_qlora_qwen3_4b.yaml --sft-dataset data_sft/sft_chapter_formal.jsonl --eval-cards data_cards/eval_execution_cards_50.jsonl --model-report-json reports/model_check_report.json --env-report-json reports/training_env_report.json --output-dir outputs/sft_v1
+python scripts/run_sft_train.py --config configs/sft_qlora_qwen3_4b.yaml --sft-dataset data_sft/sft_chapter_formal.jsonl --eval-cards data_cards/eval_execution_cards_50.jsonl --model-report-json reports/model_check_report.json --env-report-json reports/training_env_report.json --output-dir outputs/sft_v1 --style-contract-json data_style/style_contract_author_main_v1.json
 ```
+
+上面两条 formal 命令保留 Stage 5A 的证据链语境，但按 Stage 5B+ 的资产闭环写法补上了 StyleContract JSON。Stage 5B 起，缺少 `--style-contract-json` 不应被当作 formal 证据；即使命令能 dry-run，`formal_evidence` 也应保持 `false`。
 
 ## 成功标志
 
@@ -81,6 +83,7 @@ python scripts/run_sft_train.py --config configs/sft_qlora_qwen3_4b.yaml --sft-d
 - `rule_projection` 不能产生 `ready_for_next_expansion`、发布结论或扩量结论。扩量必须等真实 agent review、人工仲裁和质量报告共同通过。
 - `sanitized_output` 只用于排查清洗器行为；质量评分默认看 `raw_output`，避免 outline leak 或格式污染被清洗后误判为通过。
 - `run_sft_smoke.py` 证明 smoke 训练链路；formal SFT 证据以 `run_sft_train.py` 的 JSON preflight 门禁和 `run_manifest.json` 为准。
+- Stage 5B 起，formal SFT 还必须显式绑定 `--style-contract-json data_style/style_contract_author_main_v1.json`；缺少它或只跑 dry-run 时，`formal_evidence` 不应为 `true`。
 - `--allow-draft-cards` 是 smoke/dev 草稿流的显式豁免，不是 formal SFT 的开关。formal 卡缺少批准状态或 style contract metadata 时，应失败而不是绕过。
 
 ## 下一阶段入口
