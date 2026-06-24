@@ -1,6 +1,8 @@
 import json
 import io
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -399,6 +401,66 @@ def test_run_training_subprocess_records_phase_markers_from_streamed_logs(
         "first_optimizer_step",
         "save_adapter",
     } <= seen_phases
+
+
+def test_append_event_serializes_concurrent_writes(monkeypatch, tmp_path: Path):
+    from small_model_train import stage2_monitoring
+
+    event_log = tmp_path / "events.jsonl"
+    start_barrier = threading.Barrier(2)
+    active_writes = 0
+    active_writes_lock = threading.Lock()
+    saw_concurrent_write = False
+    written_lines: list[str] = []
+
+    class SlowEventLogHandle:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, text: str) -> int:
+            nonlocal active_writes, saw_concurrent_write
+            with active_writes_lock:
+                active_writes += 1
+                if active_writes > 1:
+                    saw_concurrent_write = True
+            time.sleep(0.01)
+            written_lines.append(text)
+            with active_writes_lock:
+                active_writes -= 1
+            return len(text)
+
+    def fake_open(self, *_args, **_kwargs):
+        if self == event_log:
+            return SlowEventLogHandle()
+        return original_open(self, *_args, **_kwargs)
+
+    original_open = Path.open
+    monkeypatch.setattr(Path, "open", fake_open)
+
+    def append_from_thread(index: int) -> None:
+        start_barrier.wait()
+        stage2_monitoring.append_event(
+            event_log,
+            phase=f"phase_{index}",
+            status="ok",
+            detail={"index": index},
+        )
+
+    threads = [
+        threading.Thread(target=append_from_thread, args=(index,))
+        for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert saw_concurrent_write is False
+    assert len(written_lines) == 2
+    assert [json.loads(line)["status"] for line in written_lines] == ["ok", "ok"]
 
 
 def test_run_training_subprocess_does_not_mark_prepare_lora_for_lora_rank_config(
