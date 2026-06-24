@@ -40,10 +40,10 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 ## 4. 生成风格契约
 
 ```powershell
-python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-output style_contract.md --profile-output style_profile.json
+python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-json-output data_style/style_contract_author_main_v1.json --contract-output style_contract.md --metrics-output data_style/style_metrics_author_main_v1.json --style-contract-id author_main_v1
 ```
 
-`style_contract.md` 用于章节卡和训练提示中的风格约束；`style_profile.json` 用于复查篇幅、对白比例、段落长度等统计分布。
+Stage 5B 起，这一步生成 StyleContract 三件套：`data_style/style_contract_author_main_v1.json`、`style_contract.md`、`data_style/style_metrics_author_main_v1.json`。formal SFT 使用 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，Markdown 只用于人工审阅；旧的 `style_profile.json` 仍可通过 `--profile-output` 作为兼容统计输出。
 
 ## 5. 准备章节卡
 

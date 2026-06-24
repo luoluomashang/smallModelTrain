@@ -37,7 +37,15 @@ formal SFT 必须显式传入 `approved` 或 `frozen` 的 StyleContract JSON：
 python scripts/build_sft_dataset.py --cards data_cards/chapter_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json
 ```
 
-如果 contract 仍是 `pending_review`，命令应失败。卡里的 `style_contract_id` 和 `style_contract_sha256` 必须与 JSON 完全一致。
+如果 contract 仍是 `pending_review`，命令应失败。卡里的 `style_contract_id` 必须与 StyleContract JSON 的 id 一致，卡里的 `style_contract_sha256` 必须等于 StyleContract JSON 里的 `contract_sha256`。
+
+正式训练同样要显式绑定同一个 StyleContract JSON：
+
+```powershell
+python scripts/run_sft_train.py --config configs/sft_qlora_qwen3_4b.yaml --sft-dataset data_sft/sft_chapter_formal.jsonl --eval-cards data_cards/eval_execution_cards_50.jsonl --model-report-json reports/model_check_report.json --env-report-json reports/training_env_report.json --output-dir outputs/sft_v1 --style-contract-json data_style/style_contract_author_main_v1.json
+```
+
+缺少 `--style-contract-json`，或只运行 dry-run，都表示 `formal_evidence` 仍为 `false`。
 
 ## 训练 Manifest
 
