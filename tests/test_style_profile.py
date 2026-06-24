@@ -113,6 +113,10 @@ def test_build_style_contract_script_writes_profile_and_contract_for_a_rows(tmp_
             str(chapters_path),
             "--contract-output",
             str(contract_path),
+            "--contract-json-output",
+            str(tmp_path / "style_contract.json"),
+            "--metrics-output",
+            str(tmp_path / "style_metrics.json"),
             "--profile-output",
             str(profile_path),
         ],
@@ -126,3 +130,78 @@ def test_build_style_contract_script_writes_profile_and_contract_for_a_rows(tmp_
     assert profile_path.exists()
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
     assert profile["chapter_count"] == 1
+
+
+def test_build_style_contract_script_writes_json_markdown_and_metrics(tmp_path):
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_json_path = tmp_path / "data_style" / "style_contract_author_main_v1.json"
+    contract_md_path = tmp_path / "style_contract.md"
+    metrics_path = tmp_path / "data_style" / "style_metrics_author_main_v1.json"
+    write_jsonl(
+        chapters_path,
+        [
+            {"id": "a", "quality_tag": "A", "split": "train", "text": "林默点头。\n\n“成交。”"},
+            {"id": "b", "quality_tag": "B", "split": "train", "text": "这行不应该参与统计。"},
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_style_contract.py",
+            "--chapters",
+            str(chapters_path),
+            "--contract-json-output",
+            str(contract_json_path),
+            "--contract-output",
+            str(contract_md_path),
+            "--metrics-output",
+            str(metrics_path),
+            "--style-contract-id",
+            "author_main_v1",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    asset = json.loads(contract_json_path.read_text(encoding="utf-8"))
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert asset["approval_status"] == "pending_review"
+    assert asset["style_contract_id"] == "author_main_v1"
+    assert asset["contract_sha256"]
+    assert asset["source_corpus"]["row_count"] == 2
+    assert asset["source_corpus"]["selected_rows"] == 1
+    assert metrics["chapter_count"] == 1
+    assert metrics["source_filter"]["total_rows"] == 2
+    assert metrics["source_filter"]["selected_rows"] == 1
+    assert metrics["source_filter"]["skipped_rows"] == 1
+    assert "# Style Contract author_main_v1" in contract_md_path.read_text(encoding="utf-8")
+
+
+def test_build_style_contract_rejects_duplicate_outputs(tmp_path):
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "same.json"
+    write_jsonl(chapters_path, [{"id": "a", "quality_tag": "A", "text": "正文"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_style_contract.py",
+            "--chapters",
+            str(chapters_path),
+            "--contract-json-output",
+            str(output_path),
+            "--contract-output",
+            str(output_path),
+            "--metrics-output",
+            str(tmp_path / "metrics.json"),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "output paths must be distinct" in result.stderr

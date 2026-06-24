@@ -8,6 +8,7 @@ data_clean/
 data_cards/
 data_sft/
 data_pref/
+data_style/
 outputs/
 reports/
 logs/
