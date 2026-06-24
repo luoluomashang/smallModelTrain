@@ -12,6 +12,7 @@ if str(SRC_DIR) not in sys.path:
 
 from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.sft_builder import build_sft_rows
+from small_model_train.style_contract import read_style_contract_asset
 
 
 def _write_dataset_info(path: str | Path, output_path: str | Path) -> None:
@@ -35,17 +36,30 @@ def main() -> None:
     parser.add_argument("--chapters", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--dataset-info-output")
+    parser.add_argument("--style-contract-json")
     parser.add_argument("--allow-draft-cards", action="store_true")
     args = parser.parse_args()
 
     if args.dataset_info_output and Path(args.output).resolve() == Path(args.dataset_info_output).resolve():
         parser.error("--dataset-info-output must not be the same path as --output")
 
-    rows = build_sft_rows(
-        read_jsonl(args.cards),
-        read_jsonl(args.chapters),
-        require_approved_cards=not args.allow_draft_cards,
-    )
+    try:
+        style_contract = None
+        if args.style_contract_json:
+            style_contract = read_style_contract_asset(args.style_contract_json)
+        elif not args.allow_draft_cards:
+            raise ValueError("style contract JSON is required for formal SFT")
+
+        rows = build_sft_rows(
+            read_jsonl(args.cards),
+            read_jsonl(args.chapters),
+            require_approved_cards=not args.allow_draft_cards,
+            style_contract=style_contract,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
     write_jsonl(args.output, rows)
     if args.dataset_info_output:
         _write_dataset_info(args.dataset_info_output, args.output)

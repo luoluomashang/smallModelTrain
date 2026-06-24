@@ -8,8 +8,10 @@ training into answer leakage rather than instruction following.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from small_model_train.prompt_renderer import SYSTEM_PROMPT, render_execution_input
+from small_model_train.style_contract import is_contract_approved_for_formal_sft, validate_style_contract_asset
 
 
 INSTRUCTION = SYSTEM_PROMPT
@@ -62,7 +64,32 @@ def _require_approved_card(card: dict) -> None:
         raise ValueError(f"style_contract_sha256 must be a 64-character hex digest for formal SFT: {card_id}")
 
 
-def build_sft_rows(cards: list[dict], chapters: list[dict], require_approved_cards: bool = False) -> list[dict]:
+def _require_card_matches_style_contract(card: dict, style_contract: dict[str, Any]) -> None:
+    contract = validate_style_contract_asset(style_contract)
+    card_id = card.get("id", "<missing id>")
+    if not is_contract_approved_for_formal_sft(contract):
+        raise ValueError(
+            "style contract approval_status must be approved or frozen for formal SFT: "
+            f"{contract['style_contract_id']}"
+        )
+    if card.get("style_contract_id") != contract["style_contract_id"]:
+        raise ValueError(
+            "style_contract_id mismatch for formal SFT: "
+            f"{card_id}: card={card.get('style_contract_id')!r}, contract={contract['style_contract_id']!r}"
+        )
+    if card.get("style_contract_sha256") != contract["contract_sha256"]:
+        raise ValueError(
+            "style_contract_sha256 mismatch for formal SFT: "
+            f"{card_id}: card={card.get('style_contract_sha256')!r}, contract={contract['contract_sha256']!r}"
+        )
+
+
+def build_sft_rows(
+    cards: list[dict],
+    chapters: list[dict],
+    require_approved_cards: bool = False,
+    style_contract: dict[str, Any] | None = None,
+) -> list[dict]:
     chapter_by_id = {chapter["id"]: chapter for chapter in chapters}
     rows: list[dict] = []
     for card in cards:
@@ -72,6 +99,10 @@ def build_sft_rows(cards: list[dict], chapters: list[dict], require_approved_car
             continue
         if require_approved_cards:
             _require_approved_card(card)
+        if style_contract is not None:
+            _require_card_matches_style_contract(card, style_contract)
+        elif require_approved_cards:
+            raise ValueError("style contract JSON is required for formal SFT")
         rows.append(
             {
                 "instruction": INSTRUCTION,
