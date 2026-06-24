@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from small_model_train.io_utils import write_jsonl
 from small_model_train import style_profile
@@ -142,6 +143,7 @@ def test_build_style_contract_script_writes_json_markdown_and_metrics(tmp_path):
         [
             {"id": "a", "quality_tag": "A", "split": "train", "text": "林默点头。\n\n“成交。”"},
             {"id": "b", "quality_tag": "B", "split": "train", "text": "这行不应该参与统计。"},
+            {"id": "c", "quality_tag": "B", "split": "eval", "text": "这行也不应该参与统计。"},
         ],
     )
 
@@ -171,12 +173,13 @@ def test_build_style_contract_script_writes_json_markdown_and_metrics(tmp_path):
     assert asset["approval_status"] == "pending_review"
     assert asset["style_contract_id"] == "author_main_v1"
     assert asset["contract_sha256"]
-    assert asset["source_corpus"]["row_count"] == 2
+    assert asset["source_corpus"]["row_count"] == 3
     assert asset["source_corpus"]["selected_rows"] == 1
+    assert asset["source_corpus"]["split_summary"] == {"train": 1}
     assert metrics["chapter_count"] == 1
-    assert metrics["source_filter"]["total_rows"] == 2
+    assert metrics["source_filter"]["total_rows"] == 3
     assert metrics["source_filter"]["selected_rows"] == 1
-    assert metrics["source_filter"]["skipped_rows"] == 1
+    assert metrics["source_filter"]["skipped_rows"] == 2
     assert "# Style Contract author_main_v1" in contract_md_path.read_text(encoding="utf-8")
 
 
@@ -205,3 +208,93 @@ def test_build_style_contract_rejects_duplicate_outputs(tmp_path):
 
     assert result.returncode == 2
     assert "output paths must be distinct" in result.stderr
+
+
+def test_build_style_contract_rejects_empty_selected_corpus_without_outputs(tmp_path):
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_json_path = tmp_path / "style_contract.json"
+    contract_md_path = tmp_path / "style_contract.md"
+    metrics_path = tmp_path / "style_metrics.json"
+    write_jsonl(chapters_path, [{"id": "b", "quality_tag": "B", "text": "正文"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_style_contract.py",
+            "--chapters",
+            str(chapters_path),
+            "--contract-json-output",
+            str(contract_json_path),
+            "--contract-output",
+            str(contract_md_path),
+            "--metrics-output",
+            str(metrics_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "no rows matched quality_tag=A" in result.stderr
+    assert not contract_json_path.exists()
+    assert not contract_md_path.exists()
+    assert not metrics_path.exists()
+
+
+def test_build_style_contract_uses_default_outputs(tmp_path):
+    chapters_path = tmp_path / "chapters.jsonl"
+    script_path = Path("scripts/build_style_contract.py").resolve()
+    write_jsonl(chapters_path, [{"id": "a", "quality_tag": "A", "text": "正文"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--chapters",
+            str(chapters_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "style_contract.md").exists()
+    assert (tmp_path / "data_style" / "style_contract_author_main_v1.json").exists()
+    assert (tmp_path / "data_style" / "style_metrics_author_main_v1.json").exists()
+
+
+def test_build_style_contract_rejects_blank_style_contract_id(tmp_path):
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_json_path = tmp_path / "style_contract.json"
+    contract_md_path = tmp_path / "style_contract.md"
+    metrics_path = tmp_path / "style_metrics.json"
+    write_jsonl(chapters_path, [{"id": "a", "quality_tag": "A", "text": "正文"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_style_contract.py",
+            "--chapters",
+            str(chapters_path),
+            "--contract-json-output",
+            str(contract_json_path),
+            "--contract-output",
+            str(contract_md_path),
+            "--metrics-output",
+            str(metrics_path),
+            "--style-contract-id",
+            " ",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "style-contract-id must be non-empty" in result.stderr
+    assert not contract_json_path.exists()
+    assert not contract_md_path.exists()
+    assert not metrics_path.exists()

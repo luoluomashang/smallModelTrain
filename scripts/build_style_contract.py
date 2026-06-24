@@ -38,7 +38,7 @@ def main() -> None:
         "--contract-json-output",
         default="data_style/style_contract_author_main_v1.json",
     )
-    parser.add_argument("--contract-output", required=True)
+    parser.add_argument("--contract-output", default="style_contract.md")
     parser.add_argument(
         "--metrics-output",
         default="data_style/style_metrics_author_main_v1.json",
@@ -60,9 +60,13 @@ def main() -> None:
         args.profile_output,
     ):
         parser.error("output paths must be distinct")
+    if not args.style_contract_id.strip():
+        parser.error("style-contract-id must be non-empty")
 
     all_rows = read_jsonl(args.chapters)
     selected_rows = [row for row in all_rows if row.get("quality_tag") == "A"]
+    if not selected_rows:
+        parser.error("no rows matched quality_tag=A")
     profile = build_style_profile(selected_rows)
     profile["source_filter"] = {
         "total_rows": len(all_rows),
@@ -76,7 +80,7 @@ def main() -> None:
         "quality_filter": "quality_tag=A",
         "row_count": len(all_rows),
         "selected_rows": len(selected_rows),
-        "split_summary": _split_summary(all_rows),
+        "split_summary": _split_summary(selected_rows),
     }
     asset = build_style_contract_asset(
         style_contract_id=args.style_contract_id,
