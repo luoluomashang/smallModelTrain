@@ -76,6 +76,34 @@ def test_summarize_jsonl_artifact_rejects_raw_eval_cards_when_schema_required(
     assert "missing execution-card fields" in "\n".join(summary["schema"]["errors"])
 
 
+def test_summarize_jsonl_artifact_streams_non_schema_summary(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from small_model_train import artifact_manifest
+
+    dataset_path = tmp_path / "sft.jsonl"
+    write_jsonl(dataset_path, [{"id": "row1"}, {"id": "row2"}])
+
+    def fail_materializing_read(_path: Path):
+        raise AssertionError("non-schema summary must not materialize rows")
+
+    monkeypatch.setattr(
+        artifact_manifest,
+        "_read_jsonl_objects",
+        fail_materializing_read,
+    )
+
+    summary = artifact_manifest.summarize_jsonl_artifact(
+        dataset_path,
+        label="sft_dataset",
+        validate_execution_card_schema=False,
+    )
+
+    assert summary["row_count"] == 2
+    assert summary["schema"] == {"name": "jsonl", "valid": True, "errors": []}
+
+
 def test_validate_training_inputs_reports_missing_files(tmp_path: Path):
     result = validate_training_inputs(
         sft_dataset=tmp_path / "missing_sft.jsonl",
