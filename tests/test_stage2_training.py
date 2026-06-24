@@ -1196,6 +1196,62 @@ def test_run_sft_train_rejects_missing_style_contract_before_manifest(
     assert not (output_dir / "run_manifest.json").exists()
 
 
+def test_run_sft_train_rejects_invalid_style_contract_before_manifest(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    invalid_contract = tmp_path / "data_style" / "invalid_style_contract.json"
+    sft_dataset.parent.mkdir(parents=True)
+    invalid_contract.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
+    invalid_contract.write_text("{not json\n", encoding="utf-8")
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+
+    def fail_build_train_run(**_kwargs):
+        raise AssertionError("style contract gate must fail before command construction")
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fail_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--dry-run",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(invalid_contract),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert run_sft_train.main() == 1
+    assert "is not valid JSON" in capsys.readouterr().err
+    assert not (output_dir / "run_manifest.json").exists()
+
+
 def test_run_sft_train_dry_run_records_pending_style_contract_without_formal_evidence(
     monkeypatch,
     tmp_path: Path,
