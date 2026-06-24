@@ -3,6 +3,7 @@ import subprocess
 import sys
 
 from small_model_train.io_utils import write_jsonl
+from small_model_train import style_profile
 from small_model_train.style_profile import build_style_profile, render_style_contract
 
 
@@ -43,6 +44,46 @@ def test_build_style_profile_handles_empty_input():
     assert profile["chinese_chars"]["avg"] == 0
     assert profile["paragraph_chars"]["p90"] == 0
     assert profile["ai_taste"]["total_hits"] == 0
+
+
+def test_style_profile_distribution_uses_linear_interpolated_percentiles():
+    two_values = style_profile._distribution([10, 20])
+    four_values = style_profile._distribution([10, 20, 30, 40])
+
+    assert two_values["p50"] == 15
+    assert two_values["p90"] == 19
+    assert four_values["p50"] == 25
+    assert four_values["p90"] == 37
+
+
+def test_render_style_contract_accepts_legacy_nested_scalar_and_none_metrics():
+    profiles = [
+        {"avg_dialogue_ratio": 0.5, "avg_paragraph_chars": 8},
+        {"dialogue_ratio": {"avg": 0.25}, "paragraph_chars": {"avg": 12}},
+        {"dialogue_ratio": 0.25, "paragraph_chars": 12},
+        {"dialogue_ratio": None, "paragraph_chars": None},
+    ]
+
+    for profile in profiles:
+        contract = render_style_contract(profile)
+
+        assert "对话比例参考" in contract
+        assert "段落长度参考" in contract
+
+
+def test_build_style_profile_skips_invalid_ai_trace_phrases(monkeypatch):
+    monkeypatch.setattr(
+        style_profile,
+        "AI_TRACE_PHRASES",
+        ["空气仿佛凝固了", "", None, 123],
+    )
+
+    profile = build_style_profile(
+        [{"id": "a", "text": "空气仿佛凝固了。空气仿佛凝固了。"}]
+    )
+
+    assert profile["ai_taste"]["phrase_hits"] == {"空气仿佛凝固了": 2}
+    assert profile["ai_taste"]["total_hits"] == 2
 
 
 def test_render_style_contract_contains_project_rules():

@@ -22,11 +22,18 @@ PUNCTUATION_MARKS = ("。", "，", "、", "；", "：", "！", "？", "“", "�
 
 
 def _percentile(values: list[float], percentile: float) -> float:
+    """Return a linearly interpolated percentile for sorted-position stability."""
     if not values:
         return 0
     ordered = sorted(values)
-    index = round((len(ordered) - 1) * percentile)
-    return round(float(ordered[index]), 4)
+    position = (len(ordered) - 1) * percentile
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(ordered) - 1)
+    fraction = position - lower_index
+    interpolated = ordered[lower_index] + (
+        ordered[upper_index] - ordered[lower_index]
+    ) * fraction
+    return round(float(interpolated), 4)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -61,8 +68,11 @@ def _punctuation_density(texts: list[str]) -> dict[str, float]:
 
 
 def _ai_taste_metrics(texts: list[str]) -> dict:
+    phrases = [
+        phrase for phrase in AI_TRACE_PHRASES if isinstance(phrase, str) and phrase
+    ]
     phrase_hits = {
-        phrase: sum(text.count(phrase) for text in texts) for phrase in AI_TRACE_PHRASES
+        phrase: sum(text.count(phrase) for text in texts) for phrase in phrases
     }
     total_hits = sum(phrase_hits.values())
     total_chars = sum(count_chinese_chars(text) for text in texts)
@@ -73,6 +83,20 @@ def _ai_taste_metrics(texts: list[str]) -> dict:
         if total_chars
         else 0,
     }
+
+
+def _metric_value(metric: object, fallback: object = 0) -> object:
+    if isinstance(metric, dict):
+        return metric.get("avg", fallback)
+    if metric is None:
+        return fallback
+    return metric
+
+
+def _float_or_zero(value: object) -> float:
+    if value is None:
+        return 0
+    return float(value)
 
 
 def build_style_profile(rows: list[dict]) -> dict:
@@ -102,15 +126,21 @@ def build_style_profile(rows: list[dict]) -> dict:
 
 
 def render_style_contract(profile: dict) -> str:
-    dialogue_ratio = profile.get("dialogue_ratio", {})
+    dialogue_ratio = _metric_value(
+        profile.get("dialogue_ratio"), profile.get("avg_dialogue_ratio", 0)
+    )
     dialogue_percent = round(
-        float(dialogue_ratio.get("avg", profile.get("avg_dialogue_ratio", 0))) * 100,
+        _float_or_zero(dialogue_ratio) * 100,
         1,
     )
-    paragraph_stats = profile.get("paragraph_chars", {})
-    avg_paragraph_chars = paragraph_stats.get(
-        "avg", profile.get("avg_paragraph_chars", 0)
+    avg_paragraph_chars = _metric_value(
+        profile.get("paragraph_chars"), profile.get("avg_paragraph_chars", 0)
     )
+    if avg_paragraph_chars is None:
+        avg_paragraph_chars = 0
+    ai_taste = profile.get("ai_taste", {})
+    if not isinstance(ai_taste, dict):
+        ai_taste = {}
     return "\n".join(
         [
             "【角色】",
@@ -135,7 +165,7 @@ def render_style_contract(profile: dict) -> str:
             "5. 不写眼神逐渐坚定起来。",
             (
                 "6. 当前语料 AI 味短语命中约 "
-                f"{profile.get('ai_taste', {}).get('hits_per_10k_chars', 0)} "
+                f"{ai_taste.get('hits_per_10k_chars', 0)} "
                 "次/万字，生成时应继续压低。"
             ),
             "",
