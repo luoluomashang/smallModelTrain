@@ -35,12 +35,17 @@ def main() -> None:
     parser.add_argument("--chapters", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--dataset-info-output")
+    parser.add_argument("--allow-draft-cards", action="store_true")
     args = parser.parse_args()
 
     if args.dataset_info_output and Path(args.output).resolve() == Path(args.dataset_info_output).resolve():
         parser.error("--dataset-info-output must not be the same path as --output")
 
-    rows = build_sft_rows(read_jsonl(args.cards), read_jsonl(args.chapters))
+    rows = build_sft_rows(
+        read_jsonl(args.cards),
+        read_jsonl(args.chapters),
+        require_approved_cards=not args.allow_draft_cards,
+    )
     write_jsonl(args.output, rows)
     if args.dataset_info_output:
         _write_dataset_info(args.dataset_info_output, args.output)

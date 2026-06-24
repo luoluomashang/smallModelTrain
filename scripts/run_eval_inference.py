@@ -12,10 +12,12 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from small_model_train.io_utils import write_jsonl
+from small_model_train.prompt_renderer import prompt_sha256
 from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
     load_eval_cards,
+    render_eval_model_input,
     render_eval_prompt,
 )
 from small_model_train.stage2_monitoring import (
@@ -64,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-new-tokens", type=positive_int)
     parser.add_argument("--repetition-penalty", type=positive_float)
     parser.add_argument("--no-repeat-ngram-size", type=positive_int)
+    parser.add_argument("--seed", type=int, default=20260623)
     args = parser.parse_args(argv)
 
     if args.dry_run:
@@ -72,9 +75,11 @@ def main(argv: list[str] | None = None) -> int:
                 args.cards,
                 args.output,
                 args.model_name,
+                args.adapter_dir,
                 args.max_new_tokens,
                 args.repetition_penalty,
                 args.no_repeat_ngram_size,
+                args.seed,
             )
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
@@ -142,9 +147,11 @@ def _run_dry(
     cards_path: str | Path,
     output_path: str | Path,
     model_name: str,
+    adapter_dir: str | Path | None = None,
     max_new_tokens: int | None = None,
     repetition_penalty: float | None = None,
     no_repeat_ngram_size: int | None = None,
+    seed: int = 20260623,
 ) -> None:
     params = default_inference_params()
     if max_new_tokens is not None:
@@ -156,11 +163,25 @@ def _run_dry(
     if no_repeat_ngram_size is not None:
         params = dict(params)
         params["no_repeat_ngram_size"] = no_repeat_ngram_size
+    params = dict(params)
+    params["seed"] = seed
     rows = []
     for card in load_eval_cards(cards_path):
         sample_id = str(card.get("id", ""))
+        prompt = render_eval_model_input(card)
         output = "[DRY RUN] " + render_eval_prompt(card)[:80]
-        rows.append(build_generation_row(sample_id, output, model_name, params))
+        rows.append(
+            build_generation_row(
+                sample_id,
+                output,
+                model_name,
+                params,
+                sanitized_output=output,
+                adapter_dir=str(adapter_dir) if adapter_dir is not None else None,
+                prompt_sha256=prompt_sha256(prompt),
+                sanitizer_events=[],
+            )
+        )
     write_jsonl(output_path, rows)
 
 
@@ -178,6 +199,8 @@ def _build_worker_command(args: argparse.Namespace) -> list[str]:
         str(args.output),
         "--model-name",
         str(args.model_name),
+        "--seed",
+        str(getattr(args, "seed", 20260623)),
     ]
     if args.max_new_tokens is not None:
         command.extend(["--max-new-tokens", str(args.max_new_tokens)])

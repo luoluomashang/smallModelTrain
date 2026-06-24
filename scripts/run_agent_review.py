@@ -93,7 +93,7 @@ def _safe_issue_labels(values: Any) -> list[str]:
     return labels
 
 
-def _mock_reviews(
+def _rule_projection_reviews(
     cards: list[dict[str, Any]],
     metrics: list[dict[str, Any]],
     target_platform: str,
@@ -118,11 +118,12 @@ def _mock_reviews(
                     "genre_tags": card["genre_tags"],
                     "rubric_version": rubric_version,
                     "reviewer": reviewer,
+                    "review_backend": "rule_projection",
                     "pass": passed,
                     "severity": "none" if passed else "major",
                     "issues": issues,
                     "evidence": [
-                        "mock review derived from Stage 4 hard gate metrics"
+                        "rule projection derived from Stage 4 hard gate metrics"
                     ],
                     "recommendation": "accept" if passed else "revise",
                     "confidence": 1.0,
@@ -131,6 +132,36 @@ def _mock_reviews(
     return rows
 
 
+def _normalize_backend(backend: str) -> str:
+    if backend == "mock":
+        return "rule_projection"
+    return backend
+
+
+def _contains_rule_projection_review_rows(review_rows: list[dict[str, Any]]) -> bool:
+    return any(
+        isinstance(row, dict) and row.get("review_backend") == "rule_projection"
+        for row in review_rows
+    )
+
+
+def _mark_projection_only_summary(summary: dict[str, Any]) -> None:
+    summary["projection_source_decision"] = summary.get("decision")
+    summary["projection_blocked_ids"] = list(summary.get("blocked_ids", []))
+    summary["projection_arbitration_ids"] = list(summary.get("arbitration_ids", []))
+    summary["review_backend"] = "rule_projection"
+    summary["projection_only"] = True
+    summary["agent_gate_pass"] = False
+    summary["decision"] = "rules_pass_agent_pending"
+
+
+def _mark_projection_only_votes(votes: list[dict[str, Any]]) -> None:
+    for vote in votes:
+        vote["projection_source_agent_gate_pass"] = vote.get("agent_gate_pass")
+        vote["review_backend"] = "rule_projection"
+        vote["projection_only"] = True
+        vote["agent_gate_pass"] = False
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", required=True)
@@ -138,7 +169,11 @@ def main() -> int:
     parser.add_argument("--metrics", required=True)
     parser.add_argument("--target-platform", required=True)
     parser.add_argument("--rubric-version", default=RUBRIC_VERSION)
-    parser.add_argument("--backend", choices=["mock"], default="mock")
+    parser.add_argument(
+        "--backend",
+        choices=["rule_projection", "mock"],
+        default="rule_projection",
+    )
     parser.add_argument("--reviews-import")
     parser.add_argument("--output", required=True)
     parser.add_argument("--votes-output", required=True)
@@ -157,14 +192,23 @@ def main() -> int:
 
         if args.reviews_import:
             review_rows = read_jsonl(args.reviews_import)
+            active_backend = (
+                "rule_projection"
+                if _contains_rule_projection_review_rows(review_rows)
+                else None
+            )
         else:
-            review_rows = _mock_reviews(
+            active_backend = _normalize_backend(args.backend)
+            review_rows = _rule_projection_reviews(
                 cards, metrics, args.target_platform, args.rubric_version
             )
 
         summary, votes = aggregate_agent_reviews(
             expected_ids, review_rows, args.target_platform, args.rubric_version
         )
+        if active_backend == "rule_projection":
+            _mark_projection_only_summary(summary)
+            _mark_projection_only_votes(votes)
         report = render_agent_review_report(args.title, summary, votes)
 
         write_jsonl(args.output, review_rows)

@@ -6,6 +6,7 @@ from typing import Any
 
 from small_model_train.execution_cards import validate_execution_cards
 from small_model_train.io_utils import read_jsonl
+from small_model_train.prompt_renderer import render_model_input_prefix
 from small_model_train.sft_builder import render_sft_input
 
 OUTLINE_HEADING_RE = re.compile(r"【[^】]{1,80}】")
@@ -60,16 +61,42 @@ def render_eval_prompt(card: dict) -> str:
     return render_sft_input(card)
 
 
+def render_eval_model_input(card: dict, tokenizer: Any | None = None) -> str:
+    render_sft_input(card)
+    return render_model_input_prefix(card, tokenizer)
+
+
 def _count_chinese_chars(text: str) -> int:
     return len(CHINESE_CHAR_RE.findall(text))
 
 
-def _cap_chinese_chars(
+def _event_preview(text: str, max_chars: int = 80) -> str:
+    preview = text.strip().replace("\n", "\\n")
+    if len(preview) <= max_chars:
+        return preview
+    return preview[: max_chars - 3] + "..."
+
+
+def _line_event(
+    event_type: str,
+    reason: str,
+    line_number: int,
+    text: str,
+) -> dict[str, Any]:
+    return {
+        "type": event_type,
+        "reason": reason,
+        "line_number": line_number,
+        "preview": _event_preview(text),
+    }
+
+
+def _cap_chinese_chars_with_event(
     text: str,
     max_chinese_chars: int | None = DEFAULT_MAX_CHINESE_CHARS,
-) -> str:
+) -> tuple[str, dict[str, Any] | None]:
     if max_chinese_chars is None:
-        return text.strip()
+        return text.strip(), None
 
     chinese_count = 0
     overflow = False
@@ -84,24 +111,52 @@ def _cap_chinese_chars(
 
     clipped = "".join(kept).rstrip()
     if not overflow:
-        return clipped.strip()
+        return clipped.strip(), None
 
     sentence_end = max(clipped.rfind(mark) for mark in "。！？!?")
     if sentence_end >= 0:
         sentence_clipped = clipped[: sentence_end + 1].rstrip()
         if _count_chinese_chars(sentence_clipped) >= MIN_SENTENCE_CAP_CHINESE_CHARS:
-            return sentence_clipped.strip()
-    return clipped.strip()
+            clipped = sentence_clipped
+    capped = clipped.strip()
+    return capped, {
+        "type": "cap_chinese_chars",
+        "reason": "max_chinese_chars",
+        "preview": _event_preview(capped),
+        "max_chinese_chars": max_chinese_chars,
+        "chinese_chars_before": _count_chinese_chars(text),
+        "chinese_chars_after": _count_chinese_chars(capped),
+    }
+
+
+def _cap_chinese_chars(
+    text: str,
+    max_chinese_chars: int | None = DEFAULT_MAX_CHINESE_CHARS,
+) -> str:
+    capped, _event = _cap_chinese_chars_with_event(text, max_chinese_chars)
+    return capped
 
 
 def sanitize_generated_output(
     text: str,
     max_chinese_chars: int | None = DEFAULT_MAX_CHINESE_CHARS,
 ) -> str:
+    sanitized, _events = sanitize_generated_output_with_events(text, max_chinese_chars)
+    return sanitized
+
+
+def sanitize_generated_output_with_events(
+    text: str,
+    max_chinese_chars: int | None = DEFAULT_MAX_CHINESE_CHARS,
+) -> tuple[str, list[dict[str, Any]]]:
     lines: list[str] = []
+    events: list[dict[str, Any]] = []
     in_meta_block = False
 
-    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+    for line_number, raw_line in enumerate(
+        text.replace("\r\n", "\n").replace("\r", "\n").split("\n"),
+        start=1,
+    ):
         stripped = raw_line.strip()
         if not stripped:
             if lines and lines[-1] != "":
@@ -117,13 +172,36 @@ def sanitize_generated_output(
 
         if has_heading or has_outline_bracket or has_meta_marker:
             in_meta_block = True
+            if has_heading:
+                reason = "outline_heading"
+            elif has_outline_bracket:
+                reason = "outline_bracket"
+            else:
+                reason = "meta_directive"
+            events.append(
+                _line_event("drop_meta_line", reason, line_number, stripped)
+            )
             continue
         if is_separator:
             in_meta_block = False
+            events.append(
+                _line_event("drop_separator", "separator", line_number, stripped)
+            )
             continue
         if is_list_item:
+            events.append(
+                _line_event("drop_list_line", "list_item", line_number, stripped)
+            )
             continue
         if in_meta_block and len(stripped) <= 60 and not PROSE_END_RE.search(stripped):
+            events.append(
+                _line_event(
+                    "drop_meta_continuation",
+                    "meta_block_continuation",
+                    line_number,
+                    stripped,
+                )
+            )
             continue
 
         in_meta_block = False
@@ -131,7 +209,13 @@ def sanitize_generated_output(
 
     while lines and lines[-1] == "":
         lines.pop()
-    return _cap_chinese_chars("\n".join(lines).strip(), max_chinese_chars)
+    sanitized, cap_event = _cap_chinese_chars_with_event(
+        "\n".join(lines).strip(),
+        max_chinese_chars,
+    )
+    if cap_event is not None:
+        events.append(cap_event)
+    return sanitized, events
 
 
 def build_generation_row(
@@ -139,12 +223,29 @@ def build_generation_row(
     output: str,
     model: str,
     params: dict,
+    *,
+    raw_output: str | None = None,
+    sanitized_output: str | None = None,
+    adapter_dir: str | None = "",
+    finish_reason: str = "unknown",
+    generated_tokens: int = 0,
+    prompt_sha256: str = "",
+    sanitizer_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    raw = output if raw_output is None else raw_output
+    sanitized = raw if sanitized_output is None else sanitized_output
     return {
         "id": sample_id,
-        "output": output,
+        "output": raw,
+        "raw_output": raw,
+        "sanitized_output": sanitized,
         "model": model,
+        "adapter_dir": adapter_dir,
         "params": dict(params),
+        "finish_reason": finish_reason,
+        "generated_tokens": generated_tokens,
+        "prompt_sha256": prompt_sha256,
+        "sanitizer_events": list(sanitizer_events or []),
     }
 
 

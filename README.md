@@ -60,8 +60,8 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 训练前检查从这里开始：
 
 ```powershell
-python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507 --report reports/model_check_report.md
-python scripts/check_training_env.py --report reports/training_env_report.md
+python scripts/check_local_model.py --model-dir E:\models\Qwen3-4B-Instruct-2507 --report reports/model_check_report.md --json-output reports/model_check_report.json
+python scripts/check_training_env.py --report reports/training_env_report.md --json-output reports/training_env_report.json
 python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards_50.jsonl --config configs/sft_qlora_qwen3_4b_smoke_6144.yaml --run-smoke-dry-run
 ```
 
@@ -73,6 +73,7 @@ python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards
 - [第三阶段真实数据准备指南](docs/stage3-data-bring-up-guide.zh.md)
 - [第四阶段 Smoke Eval 指南](docs/stage4-smoke-eval-guide.zh.md)
 - [Stage 4.1 Quality Eval Hardening 指南](docs/stage4-1-quality-eval-guide.zh.md)
+- [Stage 5A 证据链修正操作指南](docs/stage5a-evidence-chain-hardening.zh.md)
 - [Stage 4 决策日志](docs/stage4-decision-log.zh.md)
 - [第四阶段总结与下一阶段前瞻](docs/stage4-summary-next-outlook.zh.md)
 

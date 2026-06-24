@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 
@@ -9,6 +10,7 @@ STYLE_CONTRACT = (
     "只输出正文。以动作、场景反应和短对白推进章节，不输出提纲、小标题、分析或创作说明。"
     "保持节奏清晰，承接上一章压力，在本章结尾留下自然余波或下一步悬念。"
 )
+STYLE_CONTRACT_SHA256 = hashlib.sha256(STYLE_CONTRACT.encode("utf-8")).hexdigest()
 
 STRUCTURE_TEMPLATE = [
     ("承接", "承接上一章留下的压力，交代本章开场状态。", 0.15),
@@ -111,6 +113,10 @@ def _build_card(chapter: dict[str, Any]) -> dict[str, Any]:
     card = {
         "id": chapter["id"],
         "card_version": "draft-v2",
+        "draft_only": True,
+        "approval_status": "draft",
+        "style_contract_id": "inline-draft-v0",
+        "style_contract_sha256": STYLE_CONTRACT_SHA256,
         "source_title": chapter.get("chapter_title", ""),
         "style_contract": STYLE_CONTRACT,
         "previous_summary": "上一章事件留下新的压力，本章从既有关系、目标和未解决冲突继续推进。",

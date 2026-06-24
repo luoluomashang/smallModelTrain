@@ -94,6 +94,38 @@ def test_summarize_quality_budget_counts_rows_tokens_and_failures():
     assert summary["decision"] == "blocked_length_short"
 
 
+
+def test_summarize_quality_budget_uses_raw_output_for_outline_leak_markers():
+    summary = summarize_quality_budget(
+        cards=[_card("a")],
+        generated_rows=[
+            {
+                "id": "a",
+                "raw_output": "以下是正文：【章节结构】\n- 一、铺垫",
+                "output": "干净正文已经去掉提示痕迹。",
+                "params": {"max_new_tokens": 1024},
+            }
+        ],
+        metric_rows=[
+            {
+                "id": "a",
+                "hard_gate_pass": False,
+                "char_count_zh": 320,
+                "failure_types": ["outline_leak"],
+            }
+        ],
+    )
+
+    assert summary["outline_leaks"] == [
+        {
+            "id": "a",
+            "char_count_zh": 320,
+            "markers": ["【", "】", "章节结构", "以下是正文"],
+            "failure_types": ["outline_leak"],
+        }
+    ]
+
+
 def test_summarize_quality_budget_blocks_duplicate_rows_with_missing_ids():
     cards = [_card("a"), _card("b")]
     generated = [
@@ -332,6 +364,122 @@ def test_summarize_quality_budget_accepts_pending_agent_review_summary():
 
     assert summary["decision"] == "rules_pass_agent_pending"
 
+
+def test_summarize_quality_budget_accepts_projection_only_pending_summary():
+    summary = summarize_quality_budget(
+        cards=[_card("a")],
+        generated_rows=[
+            {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}}
+        ],
+        metric_rows=[
+            {
+                "id": "a",
+                "hard_gate_pass": True,
+                "char_count_zh": 2200,
+                "failure_types": [],
+            }
+        ],
+        agent_summary={
+            "target_platform": "hybrid_fanqie_qidian",
+            "rubric_version": "male_webnovel_v1",
+            "expected_rows": 3,
+            "reviewed_rows": 3,
+            "reviewed_card_ids": ["a"],
+            "missing_review_ids": [],
+            "agent_gate_pass": False,
+            "blocked_ids": [],
+            "arbitration_ids": [],
+            "issue_counts": {},
+            "decision": "rules_pass_agent_pending",
+            "malformed_review_rows": [],
+            "review_backend": "rule_projection",
+            "projection_only": True,
+        },
+    )
+
+    assert summary["decision"] == "rules_pass_agent_pending"
+    assert summary["agent_review"]["review_backend"] == "rule_projection"
+    assert summary["agent_review"]["projection_only"] is True
+
+
+def test_summarize_quality_budget_rejects_ready_projection_only_summary():
+    with pytest.raises(ValueError, match="projection_only"):
+        summarize_quality_budget(
+            cards=[_card("a")],
+            generated_rows=[
+                {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}}
+            ],
+            metric_rows=[
+                {
+                    "id": "a",
+                    "hard_gate_pass": True,
+                    "char_count_zh": 2200,
+                    "failure_types": [],
+                }
+            ],
+            agent_summary={
+                "target_platform": "hybrid_fanqie_qidian",
+                "rubric_version": "male_webnovel_v1",
+                "expected_rows": 3,
+                "reviewed_rows": 3,
+                "reviewed_card_ids": ["a"],
+                "missing_review_ids": [],
+                "agent_gate_pass": True,
+                "blocked_ids": [],
+                "arbitration_ids": [],
+                "issue_counts": {},
+                "decision": "ready_for_next_expansion",
+                "malformed_review_rows": [],
+                "review_backend": "rule_projection",
+                "projection_only": True,
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "projection_fields",
+    [
+        {},
+        {"projection_only": False},
+        {"projection_only": True, "decision": "ready_for_next_expansion"},
+    ],
+)
+def test_summarize_quality_budget_rejects_invalid_rule_projection_summary(
+    projection_fields: dict[str, object],
+):
+    agent_summary = {
+        "target_platform": "hybrid_fanqie_qidian",
+        "rubric_version": "male_webnovel_v1",
+        "expected_rows": 3,
+        "reviewed_rows": 3,
+        "reviewed_card_ids": ["a"],
+        "missing_review_ids": [],
+        "agent_gate_pass": False,
+        "blocked_ids": [],
+        "arbitration_ids": [],
+        "issue_counts": {},
+        "decision": "rules_pass_agent_pending",
+        "malformed_review_rows": [],
+        "review_backend": "rule_projection",
+    }
+    agent_summary.update(projection_fields)
+
+    with pytest.raises(ValueError, match="rule_projection"):
+        summarize_quality_budget(
+            cards=[_card("a")],
+            generated_rows=[
+                {"id": "a", "output": "正文", "params": {"max_new_tokens": 1024}}
+            ],
+            metric_rows=[
+                {
+                    "id": "a",
+                    "hard_gate_pass": True,
+                    "char_count_zh": 2200,
+                    "failure_types": [],
+                }
+            ],
+            agent_summary=agent_summary,
+        )
 
 def test_summarize_quality_budget_rejects_stale_agent_summary_batch():
     with pytest.raises(ValueError, match="card ids mismatch"):

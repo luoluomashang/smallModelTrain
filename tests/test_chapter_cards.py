@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import re
 import subprocess
 import sys
 
 import pytest
 
 from small_model_train.chapter_cards import (
+    STYLE_CONTRACT,
     build_draft_chapter_cards,
     normalize_chapter_structure,
     validate_chapter_card,
@@ -118,6 +121,17 @@ def test_build_draft_chapter_cards_uses_train_a_chapters_only():
     assert cards[0]["chapter_structure"][0]["step"] == 1
     assert cards[0]["chapter_structure"][0]["name"] == "承接"
     assert cards[0]["source_text"].startswith("正文")
+
+
+def test_build_draft_chapter_cards_marks_generated_cards_as_draft_only():
+    cards = build_draft_chapter_cards([_chapter("train-a", 2800)], count=1, min_chars=2000, max_chars=3000)
+
+    style_hash = cards[0]["style_contract_sha256"]
+    assert cards[0]["draft_only"] is True
+    assert cards[0]["approval_status"] == "draft"
+    assert cards[0]["style_contract_id"] == "inline-draft-v0"
+    assert style_hash == hashlib.sha256(STYLE_CONTRACT.encode("utf-8")).hexdigest()
+    assert re.fullmatch(r"[0-9a-f]{64}", style_hash)
 
 
 def test_build_draft_chapter_cards_filters_char_count_bounds_inclusively():

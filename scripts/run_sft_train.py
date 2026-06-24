@@ -9,6 +9,8 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from small_model_train.preflight_reports import read_preflight_report
+from small_model_train.run_manifest import build_run_manifest, write_run_manifest
 from small_model_train.stage2_adapter import check_adapter_dir
 from small_model_train.stage2_training import (
     build_train_run,
@@ -26,15 +28,21 @@ def validate_full_training_prerequisites(
     smoke_adapter_dir: str | Path,
 ) -> dict[str, object]:
     errors = []
-    for label, raw_path in (
-        ("model report", model_report),
-        ("training env report", env_report),
+    for label, expected_kind, raw_path in (
+        ("model", "model", model_report),
+        ("environment", "environment", env_report),
     ):
-        path = Path(raw_path)
-        if not path.is_file():
-            errors.append(f"{label} is missing: {path}")
-        elif path.stat().st_size == 0:
-            errors.append(f"{label} is empty: {path}")
+        try:
+            report = read_preflight_report(raw_path, expected_kind=expected_kind)
+        except ValueError as exc:
+            errors.append(f"{label} preflight report invalid: {exc}")
+            continue
+        if report["passed"] is not True:
+            errors.append(f"{label} preflight report did not pass: {raw_path}")
+            errors.extend(
+                f"{label} preflight error: {error}"
+                for error in report.get("errors", [])
+            )
 
     adapter_result = check_adapter_dir(smoke_adapter_dir)
     if not adapter_result["passed"]:
@@ -53,15 +61,15 @@ def validate_full_training_prerequisites(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--config", default="configs/sft_qlora_qwen3_4b.yaml")
     parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR)
     parser.add_argument("--output-dir", default="outputs/sft_v1")
     parser.add_argument("--log-dir", default="logs/training")
     parser.add_argument("--sft-dataset", default="data_sft/sft_chapter_v1.jsonl")
     parser.add_argument("--eval-cards", default="data_cards/eval_execution_cards_50.jsonl")
-    parser.add_argument("--model-report", default="reports/model_check_report.md")
-    parser.add_argument("--env-report", default="reports/training_env_report.md")
+    parser.add_argument("--model-report-json", default="reports/model_check_report.json")
+    parser.add_argument("--env-report-json", default="reports/training_env_report.json")
     parser.add_argument("--smoke-adapter-dir", default="outputs/sft_smoke")
     parser.add_argument("--skip-prereq-checks", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -75,14 +83,20 @@ def main() -> int:
 
     if not args.skip_prereq_checks:
         prerequisites = validate_full_training_prerequisites(
-            model_report=args.model_report,
-            env_report=args.env_report,
+            model_report=args.model_report_json,
+            env_report=args.env_report_json,
             smoke_adapter_dir=args.smoke_adapter_dir,
         )
         if not prerequisites["passed"]:
             for error in prerequisites["errors"]:
                 print(error, file=sys.stderr)
             return 1
+
+    preflight_reports = _preflight_reports_for_manifest(
+        model_report=args.model_report_json,
+        env_report=args.env_report_json,
+        skipped=args.skip_prereq_checks,
+    )
 
     run = build_train_run(
         name="sft_v1",
@@ -95,7 +109,105 @@ def main() -> int:
     # full-run dry-run validates prerequisites and the launch command without consuming GPU memory.
     result = run_training_dry(run) if args.dry_run else run_training_subprocess(run)
     print(result["command_text"])
-    return int(result["exit_code"])
+
+    training_exit_code = int(result["exit_code"])
+    adapter_check = _adapter_check_for_run(args.output_dir, args.dry_run, training_exit_code)
+    manifest_passed = _manifest_passed(args.dry_run, training_exit_code, adapter_check)
+    write_run_manifest(
+        Path(args.output_dir) / "run_manifest.json",
+        build_run_manifest(
+            run_name=run["name"],
+            command=run["command"],
+            training_exit_code=training_exit_code,
+            model_dir=args.model_dir,
+            output_dir=args.output_dir,
+            config_path=run["config_path"],
+            preflight_reports=preflight_reports,
+            adapter_check=adapter_check,
+            passed=manifest_passed,
+            repo_root=REPO_ROOT,
+        ),
+    )
+
+    if training_exit_code == 0 and not args.dry_run and not adapter_check["passed"]:
+        _print_adapter_check_errors(adapter_check)
+        return 1
+    return training_exit_code
+
+
+def _preflight_reports_for_manifest(
+    *,
+    model_report: str | Path,
+    env_report: str | Path,
+    skipped: bool,
+) -> dict[str, object]:
+    reports = {}
+    for label, expected_kind, raw_path in (
+        ("model", "model", model_report),
+        ("environment", "environment", env_report),
+    ):
+        if skipped:
+            reports[label] = {
+                "path": str(raw_path),
+                "kind": expected_kind,
+                "status": "skipped",
+                "passed": False,
+                "errors": [],
+                "warnings": [],
+            }
+            continue
+        report = read_preflight_report(raw_path, expected_kind=expected_kind)
+        reports[label] = {
+            "path": str(raw_path),
+            "kind": report["kind"],
+            "passed": report["passed"],
+            "checked_at": report["checked_at"],
+            "errors": report["errors"],
+            "warnings": report["warnings"],
+        }
+    return reports
+
+
+def _adapter_check_for_run(
+    output_dir: str | Path,
+    dry_run: bool,
+    training_exit_code: int,
+) -> dict[str, object]:
+    if dry_run:
+        return {
+            "status": "skipped",
+            "passed": False,
+            "reason": "dry-run does not produce an adapter",
+        }
+    if training_exit_code != 0:
+        return {
+            "status": "not_run",
+            "passed": False,
+            "reason": "training command exited nonzero",
+        }
+    result = check_adapter_dir(output_dir)
+    result["status"] = "checked"
+    return result
+
+
+def _manifest_passed(
+    dry_run: bool,
+    training_exit_code: int,
+    adapter_check: dict[str, object],
+) -> bool:
+    if dry_run:
+        return training_exit_code == 0
+    return training_exit_code == 0 and adapter_check.get("passed") is True
+
+
+def _print_adapter_check_errors(adapter_check: dict[str, object]) -> None:
+    print("trained adapter check failed", file=sys.stderr)
+    for name in adapter_check.get("missing_files", []):
+        print(f"missing adapter file: {name}", file=sys.stderr)
+    for name in adapter_check.get("zero_size_files", []):
+        print(f"zero-size adapter file: {name}", file=sys.stderr)
+    for error in adapter_check.get("errors", []):
+        print(str(error), file=sys.stderr)
 
 
 if __name__ == "__main__":

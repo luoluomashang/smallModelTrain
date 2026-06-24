@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import re
 
+from small_model_train.prompt_renderer import SYSTEM_PROMPT, render_execution_input
 
-INSTRUCTION = "你是作者的正文执行器。请严格根据章节执行卡，写出符合作者风格的一章正文。"
+
+INSTRUCTION = SYSTEM_PROMPT
 SOURCE_LEAK_MIN_CHARS = 12
 SOURCE_LEAK_ERROR_PREFIX = "SFT input contains source_text fragment"
+APPROVED_CARD_STATUSES = {"approved", "frozen"}
 
 
 def is_source_text_leak_error(error: ValueError) -> bool:
@@ -34,67 +37,8 @@ def _find_source_text_leak(rendered_input: str, source_text: str, min_chars: int
     return None
 
 
-def _format_list(title: str, values: list[str]) -> str:
-    body = "\n".join(f"- {value}" for value in values) if values else "- 无"
-    return f"【{title}】\n{body}"
-
-
-def _format_structure(items: list[dict]) -> str:
-    if not items:
-        return "【章节结构】\n- 无"
-    lines = ["【章节结构】"]
-    for index, item in enumerate(items):
-        step = item.get("step")
-        name = item.get("name")
-        goal = item.get("goal")
-        chars = item.get("estimated_chars")
-        if type(step) is not int or step < 1:
-            raise ValueError(f"chapter_structure[{index}].step must be a positive integer")
-        if not name:
-            raise ValueError(f"chapter_structure[{index}].name is required")
-        if not goal:
-            raise ValueError(f"chapter_structure[{index}].goal is required")
-        if not isinstance(chars, str) or not chars.strip():
-            raise ValueError(f"chapter_structure[{index}].estimated_chars must be a non-empty string")
-        lines.append(f"- {step}. {name}：{goal}（建议 {chars}）")
-    return "\n".join(lines)
-
-
-def _format_characters(items: list[dict]) -> str:
-    if not items:
-        return "【人物状态】\n- 无"
-    lines = ["【人物状态】"]
-    for item in items:
-        lines.append(
-            f"- {item.get('name', '')}：{item.get('state', '')}；说话方式：{item.get('speech_style', '')}"
-        )
-    return "\n".join(lines)
-
-
 def render_sft_input(card: dict) -> str:
-    sections = [
-        "【风格契约】",
-        card.get("style_contract", ""),
-        "【前情摘要】",
-        card.get("previous_summary", ""),
-        "【本章目标】",
-        card.get("chapter_goal", ""),
-        "【冲突推进】",
-        card.get("conflict_beat", ""),
-        "【爽点兑现】",
-        card.get("payoff_beat", ""),
-        _format_structure(card.get("chapter_structure", [])),
-        _format_characters(card.get("character_states", [])),
-        _format_list("必须出现", card.get("must_include", [])),
-        _format_list("禁止事项", card.get("must_not_include", [])),
-        "【章末钩子】",
-        card.get("ending_hook", ""),
-        "【目标字数】",
-        card.get("target_word_count", "2000-2500中文汉字"),
-        "【输出要求】",
-        "只输出正文，不输出提纲、小标题、解释、分析或提示语。",
-    ]
-    rendered_input = "\n".join(section for section in sections if section is not None)
+    rendered_input = render_execution_input(card)
     leak = _find_source_text_leak(rendered_input, card.get("source_text", ""))
     if leak:
         raise ValueError(f"{SOURCE_LEAK_ERROR_PREFIX}: {leak}")
@@ -105,7 +49,20 @@ def _is_trainable_chapter(chapter: dict) -> bool:
     return chapter.get("split") == "train" and chapter.get("quality_tag") == "A"
 
 
-def build_sft_rows(cards: list[dict], chapters: list[dict]) -> list[dict]:
+def _require_approved_card(card: dict) -> None:
+    card_id = card.get("id", "<missing id>")
+    if card.get("draft_only") is True:
+        raise ValueError(f"draft card cannot enter formal SFT: {card_id}")
+    if card.get("approval_status") not in APPROVED_CARD_STATUSES:
+        raise ValueError(f"approval_status must be approved or frozen for formal SFT: {card_id}")
+    if not card.get("style_contract_id"):
+        raise ValueError(f"style_contract_id is required for formal SFT: {card_id}")
+    style_contract_sha256 = card.get("style_contract_sha256")
+    if not isinstance(style_contract_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", style_contract_sha256):
+        raise ValueError(f"style_contract_sha256 must be a 64-character hex digest for formal SFT: {card_id}")
+
+
+def build_sft_rows(cards: list[dict], chapters: list[dict], require_approved_cards: bool = False) -> list[dict]:
     chapter_by_id = {chapter["id"]: chapter for chapter in chapters}
     rows: list[dict] = []
     for card in cards:
@@ -113,6 +70,8 @@ def build_sft_rows(cards: list[dict], chapters: list[dict]) -> list[dict]:
         # Non-train rows are skipped deliberately; eval rows must stay unseen so later adapter scores mean something.
         if not chapter or not _is_trainable_chapter(chapter):
             continue
+        if require_approved_cards:
+            _require_approved_card(card)
         rows.append(
             {
                 "instruction": INSTRUCTION,

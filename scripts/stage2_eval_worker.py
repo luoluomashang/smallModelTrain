@@ -20,9 +20,10 @@ from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
     load_eval_cards,
-    render_eval_prompt,
-    sanitize_generated_output,
+    render_eval_model_input,
+    sanitize_generated_output_with_events,
 )
+from small_model_train.prompt_renderer import prompt_sha256
 
 
 def reset_generation_output(path: str | Path) -> None:
@@ -75,6 +76,12 @@ def build_inference_params(
     return params
 
 
+def _generated_token_count(tokens) -> int:
+    if hasattr(tokens, "numel"):
+        return int(tokens.numel())
+    return len(tokens)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", required=True)
@@ -85,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-new-tokens", type=positive_int)
     parser.add_argument("--repetition-penalty", type=positive_float)
     parser.add_argument("--no-repeat-ngram-size", type=positive_int)
+    parser.add_argument("--seed", type=int, default=20260623)
     args = parser.parse_args(argv)
 
     try:
@@ -95,14 +103,21 @@ def main(argv: list[str] | None = None) -> int:
 
     reset_generation_output(args.output)
 
+    import torch
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
 
     params = build_inference_params(
         args.max_new_tokens,
         args.repetition_penalty,
         args.no_repeat_ngram_size,
     )
+    params = dict(params)
+    params["seed"] = args.seed
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -122,8 +137,8 @@ def main(argv: list[str] | None = None) -> int:
     model.eval()
 
     for index, card in enumerate(cards, start=1):
-        prompt = render_eval_prompt(card)
-        inputs = tokenizer(prompt, return_tensors="pt")
+        prompt = render_eval_model_input(card, tokenizer)
+        inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         device = getattr(model, "device", None)
         if device is not None and hasattr(inputs, "to"):
             inputs = inputs.to(device)
@@ -141,17 +156,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         prompt_length = inputs["input_ids"].shape[-1]
         new_tokens = generated[0][prompt_length:]
-        output = sanitize_generated_output(
-            tokenizer.decode(new_tokens, skip_special_tokens=True)
+        raw_output = tokenizer.decode(new_tokens, skip_special_tokens=True)
+        sanitized_output, sanitizer_events = sanitize_generated_output_with_events(
+            raw_output
         )
         sample_id = str(card.get("id", ""))
         append_generation_row(
             args.output,
             build_generation_row(
                 sample_id,
-                output,
+                raw_output,
                 args.model_name,
                 params,
+                sanitized_output=sanitized_output,
+                adapter_dir=args.adapter_dir,
+                generated_tokens=_generated_token_count(new_tokens),
+                prompt_sha256=prompt_sha256(prompt),
+                sanitizer_events=sanitizer_events,
             ),
         )
         print_generation_progress(index, len(cards), sample_id)

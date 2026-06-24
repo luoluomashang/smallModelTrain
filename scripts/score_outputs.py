@@ -33,7 +33,12 @@ def main() -> int:
             seen_output_ids.add(sample_id)
             if sample_id not in cards:
                 raise ValueError(f"output id not found in cards: {sample_id}")
-            text = row.get("output", row.get("text", ""))
+            if "raw_output" in row:
+                text = row["raw_output"]
+            elif "output" in row:
+                text = row["output"]
+            else:
+                text = row.get("text", "")
             scores.append(score_output(sample_id, cards[sample_id], text))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

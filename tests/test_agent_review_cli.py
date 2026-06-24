@@ -7,6 +7,7 @@ from pathlib import Path
 from small_model_train.agent_review import REVIEWERS
 from small_model_train.execution_cards import DEFAULT_TARGET_PLATFORM, RUBRIC_VERSION
 from small_model_train.io_utils import read_jsonl, write_jsonl
+from small_model_train.stage4_quality import summarize_quality_budget
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +107,61 @@ def test_run_agent_review_import_mode_writes_votes_and_report(tmp_path: Path):
     assert read_jsonl(summary_path)[0]["decision"] == "ready_for_next_expansion"
     assert "ready_for_next_expansion" in report_path.read_text(encoding="utf-8")
 
+
+def test_run_agent_review_import_mode_quarantines_projection_rows(
+    tmp_path: Path,
+):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    metrics_path = tmp_path / "metrics.jsonl"
+    imported_reviews_path = tmp_path / "reviews_in.jsonl"
+    output_reviews_path = tmp_path / "reviews_out.jsonl"
+    votes_path = tmp_path / "votes.jsonl"
+    summary_path = tmp_path / "summary.jsonl"
+    report_path = tmp_path / "report.md"
+    write_jsonl(cards_path, [_card()])
+    write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
+    write_jsonl(metrics_path, [{"id": "case1", "hard_gate_pass": True, "failure_types": []}])
+    reviews = [_review("case1", reviewer, True) for reviewer in sorted(REVIEWERS)]
+    for review in reviews:
+        review["review_backend"] = "rule_projection"
+    write_jsonl(imported_reviews_path, reviews)
+
+    result = _run_cli(
+        "--cards",
+        str(cards_path),
+        "--outputs",
+        str(outputs_path),
+        "--metrics",
+        str(metrics_path),
+        "--target-platform",
+        DEFAULT_TARGET_PLATFORM,
+        "--reviews-import",
+        str(imported_reviews_path),
+        "--output",
+        str(output_reviews_path),
+        "--votes-output",
+        str(votes_path),
+        "--summary-output",
+        str(summary_path),
+        "--report",
+        str(report_path),
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert {row["review_backend"] for row in read_jsonl(output_reviews_path)} == {
+        "rule_projection"
+    }
+    votes = read_jsonl(votes_path)
+    assert all(vote["agent_gate_pass"] is False for vote in votes)
+    assert {vote["review_backend"] for vote in votes} == {"rule_projection"}
+    assert all(vote["projection_only"] is True for vote in votes)
+    summary = read_jsonl(summary_path)[0]
+    assert summary["decision"] == "rules_pass_agent_pending"
+    assert summary["review_backend"] == "rule_projection"
+    assert summary["projection_only"] is True
+    assert summary["agent_gate_pass"] is False
+    assert "rules_pass_agent_pending" in report_path.read_text(encoding="utf-8")
 
 def test_run_agent_review_import_mode_exits_nonzero_when_outputs_missing(
     tmp_path: Path,
@@ -591,12 +647,157 @@ def test_run_agent_review_mock_mode_exits_nonzero_when_metrics_have_empty_id(
     assert result.returncode != 0
     assert "metrics row 2 missing id" in result.stderr
 
+
+def test_run_agent_review_rule_projection_mode_marks_all_pass_pending(
+    tmp_path: Path,
+):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    metrics_path = tmp_path / "metrics.jsonl"
+    output_reviews_path = tmp_path / "reviews_out.jsonl"
+    votes_path = tmp_path / "votes.jsonl"
+    summary_path = tmp_path / "summary.jsonl"
+    report_path = tmp_path / "report.md"
+    write_jsonl(cards_path, [_card()])
+    write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
+    write_jsonl(metrics_path, [{"id": "case1", "hard_gate_pass": True, "failure_types": []}])
+
+    result = _run_cli(
+        "--cards",
+        str(cards_path),
+        "--outputs",
+        str(outputs_path),
+        "--metrics",
+        str(metrics_path),
+        "--target-platform",
+        DEFAULT_TARGET_PLATFORM,
+        "--backend",
+        "rule_projection",
+        "--output",
+        str(output_reviews_path),
+        "--votes-output",
+        str(votes_path),
+        "--summary-output",
+        str(summary_path),
+        "--report",
+        str(report_path),
+    )
+
+    assert result.returncode == 1, result.stderr
+    reviews = read_jsonl(output_reviews_path)
+    assert len(reviews) == len(REVIEWERS)
+    assert {row["review_backend"] for row in reviews} == {"rule_projection"}
+    assert all(
+        row["evidence"] == [
+            "rule projection derived from Stage 4 hard gate metrics"
+        ]
+        for row in reviews
+    )
+    summary = read_jsonl(summary_path)[0]
+    assert summary["decision"] == "rules_pass_agent_pending"
+    assert summary["review_backend"] == "rule_projection"
+    assert summary["projection_only"] is True
+    assert summary["agent_gate_pass"] is False
+    votes = read_jsonl(votes_path)
+    assert all(vote["agent_gate_pass"] is False for vote in votes)
+    assert {vote["review_backend"] for vote in votes} == {"rule_projection"}
+    assert all(vote["projection_only"] is True for vote in votes)
+    assert "rules_pass_agent_pending" in report_path.read_text(encoding="utf-8")
+    assert "agent_gate_pass=True" not in report_path.read_text(encoding="utf-8")
+
+
+def test_run_agent_review_default_backend_is_rule_projection(tmp_path: Path):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    metrics_path = tmp_path / "metrics.jsonl"
+    output_reviews_path = tmp_path / "reviews_out.jsonl"
+    votes_path = tmp_path / "votes.jsonl"
+    summary_path = tmp_path / "summary.jsonl"
+    report_path = tmp_path / "report.md"
+    write_jsonl(cards_path, [_card()])
+    write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
+    write_jsonl(metrics_path, [{"id": "case1", "hard_gate_pass": True, "failure_types": []}])
+
+    result = _run_cli(
+        "--cards",
+        str(cards_path),
+        "--outputs",
+        str(outputs_path),
+        "--metrics",
+        str(metrics_path),
+        "--target-platform",
+        DEFAULT_TARGET_PLATFORM,
+        "--output",
+        str(output_reviews_path),
+        "--votes-output",
+        str(votes_path),
+        "--summary-output",
+        str(summary_path),
+        "--report",
+        str(report_path),
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert read_jsonl(summary_path)[0]["review_backend"] == "rule_projection"
+    assert read_jsonl(summary_path)[0]["decision"] == "rules_pass_agent_pending"
+
+
+def test_run_agent_review_mock_backend_is_legacy_rule_projection_alias(
+    tmp_path: Path,
+):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    metrics_path = tmp_path / "metrics.jsonl"
+    output_reviews_path = tmp_path / "reviews_out.jsonl"
+    votes_path = tmp_path / "votes.jsonl"
+    summary_path = tmp_path / "summary.jsonl"
+    report_path = tmp_path / "report.md"
+    write_jsonl(cards_path, [_card()])
+    write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
+    write_jsonl(metrics_path, [{"id": "case1", "hard_gate_pass": True, "failure_types": []}])
+
+    result = _run_cli(
+        "--cards",
+        str(cards_path),
+        "--outputs",
+        str(outputs_path),
+        "--metrics",
+        str(metrics_path),
+        "--target-platform",
+        DEFAULT_TARGET_PLATFORM,
+        "--backend",
+        "mock",
+        "--output",
+        str(output_reviews_path),
+        "--votes-output",
+        str(votes_path),
+        "--summary-output",
+        str(summary_path),
+        "--report",
+        str(report_path),
+    )
+
+    assert result.returncode == 1, result.stderr
+    reviews = read_jsonl(output_reviews_path)
+    assert {row["review_backend"] for row in reviews} == {"rule_projection"}
+    summary = read_jsonl(summary_path)[0]
+    assert summary["decision"] == "rules_pass_agent_pending"
+    assert summary["review_backend"] == "rule_projection"
+    assert summary["projection_only"] is True
+    assert summary["agent_gate_pass"] is False
+    votes = read_jsonl(votes_path)
+    assert all(vote["agent_gate_pass"] is False for vote in votes)
+    assert {vote["review_backend"] for vote in votes} == {"rule_projection"}
+    assert all(vote["projection_only"] is True for vote in votes)
+
+
 def test_run_agent_review_mock_mode_exits_nonzero_on_failed_metrics(tmp_path: Path):
     cards_path = tmp_path / "cards.jsonl"
     outputs_path = tmp_path / "outputs.jsonl"
     metrics_path = tmp_path / "metrics.jsonl"
     output_reviews_path = tmp_path / "reviews_out.jsonl"
     votes_path = tmp_path / "votes.jsonl"
+    summary_path = tmp_path / "summary.jsonl"
     report_path = tmp_path / "report.md"
     write_jsonl(cards_path, [_card()])
     write_jsonl(outputs_path, [{"id": "case1", "output": "正文"}])
@@ -626,10 +827,38 @@ def test_run_agent_review_mock_mode_exits_nonzero_on_failed_metrics(tmp_path: Pa
         str(output_reviews_path),
         "--votes-output",
         str(votes_path),
+        "--summary-output",
+        str(summary_path),
         "--report",
         str(report_path),
     )
 
     assert result.returncode == 1
-    assert read_jsonl(votes_path)[0]["agent_gate_pass"] is False
-    assert "blocked_by_agent_review" in report_path.read_text(encoding="utf-8")
+    votes = read_jsonl(votes_path)
+    assert all(vote["agent_gate_pass"] is False for vote in votes)
+    assert {vote["review_backend"] for vote in votes} == {"rule_projection"}
+    assert all(vote["projection_only"] is True for vote in votes)
+    summary = read_jsonl(summary_path)[0]
+    assert summary["decision"] == "rules_pass_agent_pending"
+    assert summary["review_backend"] == "rule_projection"
+    assert summary["projection_only"] is True
+    assert summary["agent_gate_pass"] is False
+    assert summary["projection_source_decision"] == "blocked_by_agent_review"
+    consumed = summarize_quality_budget(
+        cards=[_card()],
+        generated_rows=[
+            {"id": "case1", "output": "正文", "params": {"max_new_tokens": 1024}}
+        ],
+        metric_rows=[
+            {
+                "id": "case1",
+                "hard_gate_pass": False,
+                "char_count_zh": 300,
+                "failure_types": ["semantic_repetition"],
+            }
+        ],
+        agent_summary=summary,
+    )
+    assert consumed["agent_review"]["decision"] == "rules_pass_agent_pending"
+    assert "rules_pass_agent_pending" in report_path.read_text(encoding="utf-8")
+    assert "agent_gate_pass=True" not in report_path.read_text(encoding="utf-8")

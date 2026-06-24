@@ -1,6 +1,8 @@
 import json
 import io
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -415,13 +417,126 @@ def test_command_text_quotes_windows_paths_with_spaces(tmp_path: Path):
     )
 
 
-def test_validate_full_training_prerequisites_requires_reports_and_smoke_adapter(
+def write_json_preflight(
+    path: Path,
+    *,
+    kind: str,
+    passed: bool,
+    payload: dict[str, Any] | None = None,
+    errors: list[str] | None = None,
+    warnings: list[str] | None = None,
+    schema_version: int = 1,
+    checked_at: str = "2026-06-23T00:00:00Z",
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "kind": kind,
+                "passed": passed,
+                "checked_at": checked_at,
+                "errors": errors or [],
+                "warnings": warnings or [],
+                "payload": payload or {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_valid_adapter(path: Path) -> None:
+    path.mkdir(parents=True)
+    (path / "adapter_config.json").write_text("{}", encoding="utf-8")
+    header = b"{}"
+    (path / "adapter_model.safetensors").write_bytes(
+        len(header).to_bytes(8, "little") + header
+    )
+    (path / "training_config_snapshot.yaml").write_text(
+        "output_dir: adapter\n",
+        encoding="utf-8",
+    )
+
+
+def test_read_preflight_report_rejects_missing_and_invalid_json(tmp_path: Path):
+    from small_model_train.preflight_reports import read_preflight_report
+
+    missing = tmp_path / "missing.json"
+    with pytest.raises(ValueError, match="missing"):
+        read_preflight_report(missing, expected_kind="model")
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid JSON"):
+        read_preflight_report(invalid, expected_kind="model")
+
+    non_object = tmp_path / "list.json"
+    non_object.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="JSON object"):
+        read_preflight_report(non_object, expected_kind="model")
+
+
+@pytest.mark.parametrize(
+    ("updates", "match"),
+    [
+        ({"schema_version": 2}, "schema"),
+        ({"kind": "environment"}, "kind"),
+        ({"passed": "true"}, "passed"),
+        ({"checked_at": "not-a-date"}, "checked_at"),
+        ({"errors": ["ok", 123]}, "errors"),
+        ({"warnings": ["ok", {"bad": True}]}, "warnings"),
+    ],
+)
+def test_read_preflight_report_rejects_invalid_schema_fields(
+    tmp_path: Path,
+    updates: dict[str, Any],
+    match: str,
+):
+    from small_model_train.preflight_reports import read_preflight_report
+
+    report = {
+        "schema_version": 1,
+        "kind": "model",
+        "passed": True,
+        "checked_at": "2026-06-23T00:00:00Z",
+        "errors": [],
+        "warnings": [],
+        "payload": {},
+    }
+    report.update(updates)
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        read_preflight_report(path, expected_kind="model")
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"errors": ["ok", 123]},
+        {"warnings": ["ok", object()]},
+    ],
+)
+def test_build_preflight_report_rejects_non_string_list_items(kwargs: dict[str, Any]):
+    from small_model_train.preflight_reports import build_preflight_report
+
+    with pytest.raises(ValueError, match=next(iter(kwargs))):
+        build_preflight_report(
+            kind="model",
+            passed=True,
+            payload={},
+            **kwargs,
+        )
+
+
+def test_validate_full_training_prerequisites_requires_json_reports_and_smoke_adapter(
     tmp_path: Path,
 ):
     from scripts.run_sft_train import validate_full_training_prerequisites
 
-    model_report = tmp_path / "reports" / "model.md"
-    env_report = tmp_path / "reports" / "env.md"
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
     smoke_adapter = tmp_path / "outputs" / "sft_smoke"
 
     result = validate_full_training_prerequisites(
@@ -431,23 +546,13 @@ def test_validate_full_training_prerequisites_requires_reports_and_smoke_adapter
     )
 
     assert result["passed"] is False
-    assert "model.md" in "\n".join(result["errors"])
-    assert "env.md" in "\n".join(result["errors"])
+    assert "model.json" in "\n".join(result["errors"])
+    assert "env.json" in "\n".join(result["errors"])
     assert "adapter_config.json" in "\n".join(result["errors"])
 
-    model_report.parent.mkdir(parents=True)
-    model_report.write_text("ok\n", encoding="utf-8")
-    env_report.write_text("ok\n", encoding="utf-8")
-    smoke_adapter.mkdir(parents=True)
-    (smoke_adapter / "adapter_config.json").write_text("{}", encoding="utf-8")
-    header = b"{}"
-    (smoke_adapter / "adapter_model.safetensors").write_bytes(
-        len(header).to_bytes(8, "little") + header
-    )
-    (smoke_adapter / "training_config_snapshot.yaml").write_text(
-        "output_dir: smoke\n",
-        encoding="utf-8",
-    )
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(smoke_adapter)
 
     result = validate_full_training_prerequisites(
         model_report=model_report,
@@ -456,3 +561,441 @@ def test_validate_full_training_prerequisites_requires_reports_and_smoke_adapter
     )
 
     assert result == {"passed": True, "errors": []}
+
+
+def test_failed_json_preflight_blocks_training_prerequisites(tmp_path: Path):
+    from scripts.run_sft_train import validate_full_training_prerequisites
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    smoke_adapter = tmp_path / "outputs" / "sft_smoke"
+    write_json_preflight(
+        model_report,
+        kind="model",
+        passed=False,
+        errors=["missing required file: config.json"],
+    )
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(smoke_adapter)
+
+    result = validate_full_training_prerequisites(
+        model_report=model_report,
+        env_report=env_report,
+        smoke_adapter_dir=smoke_adapter,
+    )
+
+    assert result["passed"] is False
+    errors = "\n".join(result["errors"])
+    assert "model preflight report did not pass" in errors
+    assert "missing required file: config.json" in errors
+
+
+def test_build_run_manifest_records_training_evidence(monkeypatch, tmp_path: Path):
+    from small_model_train import run_manifest
+
+    monkeypatch.setattr(run_manifest, "current_git_commit", lambda _cwd=None: "abc123")
+
+    manifest = run_manifest.build_run_manifest(
+        run_name="sft_v1",
+        command=["llamafactory-cli", "train", "snapshot.yaml"],
+        training_exit_code=0,
+        model_dir=tmp_path / "model",
+        output_dir=tmp_path / "output",
+        config_path=tmp_path / "output" / "training_config_snapshot.yaml",
+        preflight_reports={
+            "model": {"path": "reports/model.json", "passed": True},
+            "environment": {"path": "reports/env.json", "passed": True},
+        },
+        adapter_check={"passed": True, "errors": []},
+        passed=True,
+    )
+
+    assert manifest["schema_version"] == 1
+    assert manifest["git_commit"] == "abc123"
+    assert manifest["run_name"] == "sft_v1"
+    assert manifest["command"] == ["llamafactory-cli", "train", "snapshot.yaml"]
+    assert manifest["training_exit_code"] == 0
+    assert manifest["model_dir"] == str(tmp_path / "model")
+    assert manifest["output_dir"] == str(tmp_path / "output")
+    assert manifest["config_path"] == str(
+        tmp_path / "output" / "training_config_snapshot.yaml"
+    )
+    assert manifest["preflight_reports"]["model"]["passed"] is True
+    assert manifest["adapter_check"] == {"passed": True, "errors": []}
+    assert manifest["passed"] is True
+    assert manifest["created_at"].endswith("Z")
+
+
+def test_current_git_commit_returns_empty_string_on_subprocess_error(monkeypatch):
+    from small_model_train import run_manifest
+
+    def raise_subprocess_error(*_args, **_kwargs):
+        raise subprocess.SubprocessError("git failed")
+
+    monkeypatch.setattr(run_manifest.subprocess, "run", raise_subprocess_error)
+
+    assert run_manifest.current_git_commit() == ""
+
+
+def test_current_git_commit_passes_cwd_to_git(monkeypatch, tmp_path: Path):
+    from small_model_train import run_manifest
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout=" abc123 \n")
+
+    monkeypatch.setattr(run_manifest.subprocess, "run", fake_run)
+
+    assert run_manifest.current_git_commit(cwd=tmp_path) == "abc123"
+    assert calls == [
+        (
+            ["git", "rev-parse", "HEAD"],
+            {
+                "capture_output": True,
+                "check": True,
+                "text": True,
+                "cwd": tmp_path,
+            },
+        )
+    ]
+
+
+def test_run_sft_train_rejects_legacy_markdown_report_args(monkeypatch):
+    from scripts import run_sft_train
+
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--model-report",
+            "reports/model_check_report.md",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_sft_train.main()
+
+    assert excinfo.value.code == 2
+
+
+def test_run_sft_train_rejects_legacy_env_report_arg(monkeypatch):
+    from scripts import run_sft_train
+
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--env-report",
+            "reports/training_env_report.md",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_sft_train.main()
+
+    assert excinfo.value.code == 2
+
+
+def test_run_sft_train_dry_run_writes_manifest_without_output_adapter(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    eval_cards.write_text("{}\n", encoding="utf-8")
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("output_dir: sft_v1\n", encoding="utf-8")
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_dry",
+        lambda _run: {
+            "exit_code": 0,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "none", "suggestion": "dry-run"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--dry-run",
+            "--config",
+            str(tmp_path / "config.yaml"),
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--output-dir",
+            str(output_dir),
+            "--log-dir",
+            str(tmp_path / "logs"),
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+        ],
+    )
+
+    exit_code = run_sft_train.main()
+
+    manifest = json.loads((output_dir / "run_manifest.json").read_text("utf-8"))
+    assert exit_code == 0
+    assert manifest["training_exit_code"] == 0
+    assert manifest["adapter_check"]["status"] == "skipped"
+    assert manifest["adapter_check"]["passed"] is False
+    assert manifest["adapter_check"]["reason"] == "dry-run does not produce an adapter"
+    assert manifest["passed"] is True
+
+
+def test_run_sft_train_skip_prereqs_marks_preflights_skipped(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    eval_cards.write_text("{}\n", encoding="utf-8")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("output_dir: sft_v1\n", encoding="utf-8")
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_dry",
+        lambda _run: {
+            "exit_code": 0,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "none", "suggestion": "dry-run"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--dry-run",
+            "--skip-prereq-checks",
+            "--config",
+            str(tmp_path / "config.yaml"),
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--output-dir",
+            str(output_dir),
+            "--log-dir",
+            str(tmp_path / "logs"),
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(tmp_path / "missing" / "model.json"),
+            "--env-report-json",
+            str(tmp_path / "missing" / "env.json"),
+        ],
+    )
+
+    exit_code = run_sft_train.main()
+
+    manifest = json.loads((output_dir / "run_manifest.json").read_text("utf-8"))
+    assert exit_code == 0
+    assert manifest["preflight_reports"]["model"]["status"] == "skipped"
+    assert manifest["preflight_reports"]["model"]["passed"] is False
+    assert manifest["preflight_reports"]["environment"]["status"] == "skipped"
+    assert manifest["preflight_reports"]["environment"]["passed"] is False
+
+
+def test_run_sft_train_writes_manifest_when_training_exits_nonzero(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    eval_cards.write_text("{}\n", encoding="utf-8")
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("output_dir: sft_v1\n", encoding="utf-8")
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_subprocess",
+        lambda _run: {
+            "exit_code": 42,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "llamafactory_error", "suggestion": "inspect logs"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--config",
+            str(tmp_path / "config.yaml"),
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--output-dir",
+            str(output_dir),
+            "--log-dir",
+            str(tmp_path / "logs"),
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+        ],
+    )
+
+    exit_code = run_sft_train.main()
+
+    manifest = json.loads((output_dir / "run_manifest.json").read_text("utf-8"))
+    assert exit_code == 42
+    assert manifest["training_exit_code"] == 42
+    assert manifest["adapter_check"]["status"] == "not_run"
+    assert manifest["adapter_check"]["passed"] is False
+    assert manifest["passed"] is False
+
+
+def test_run_sft_train_writes_failed_manifest_when_adapter_invalid(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    eval_cards.write_text("{}\n", encoding="utf-8")
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("output_dir: sft_v1\n", encoding="utf-8")
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_subprocess",
+        lambda _run: {
+            "exit_code": 0,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "none", "suggestion": "无"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--config",
+            str(tmp_path / "config.yaml"),
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--output-dir",
+            str(output_dir),
+            "--log-dir",
+            str(tmp_path / "logs"),
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+        ],
+    )
+
+    exit_code = run_sft_train.main()
+
+    manifest_path = output_dir / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert exit_code != 0
+    assert manifest["training_exit_code"] == 0
+    assert manifest["adapter_check"]["passed"] is False
+    assert "adapter_config.json" in manifest["adapter_check"]["missing_files"]
+    assert manifest["passed"] is False

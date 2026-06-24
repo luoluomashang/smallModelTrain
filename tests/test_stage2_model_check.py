@@ -183,3 +183,91 @@ def test_render_model_check_report_contains_decision(tmp_path: Path):
     assert "# Local Model Check Report" in report
     assert "missing required file: config.json" in report
     assert "不进入训练" in report
+
+
+def test_check_local_model_writes_json_preflight_report(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import check_local_model
+
+    result = {
+        "model_dir": str(tmp_path / "model"),
+        "passed": False,
+        "missing_files": ["config.json"],
+        "zero_size_files": ["model-00001-of-00001.safetensors"],
+        "shard_count": 1,
+        "load_checks": {"config": "skipped", "tokenizer": "skipped"},
+        "errors": ["custom model error"],
+    }
+    report_path = tmp_path / "reports" / "model.md"
+    json_path = tmp_path / "reports" / "model.json"
+
+    monkeypatch.setattr(check_local_model, "check_model_files", lambda _path: result)
+    monkeypatch.setattr(
+        check_local_model.sys,
+        "argv",
+        [
+            "check_local_model.py",
+            "--model-dir",
+            str(tmp_path / "model"),
+            "--report",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+            "--skip-transformers-load",
+        ],
+    )
+
+    exit_code = check_local_model.main()
+
+    report = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert report["schema_version"] == 1
+    assert report["kind"] == "model"
+    assert report["passed"] is False
+    assert report["payload"] == result
+    assert "custom model error" in report["errors"]
+    assert "missing required file: config.json" in report["errors"]
+    assert (
+        "zero-size model shard: model-00001-of-00001.safetensors"
+        in report["errors"]
+    )
+    assert report_path.exists()
+
+
+def test_check_local_model_writes_default_json_preflight_report(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import check_local_model
+
+    result = {
+        "model_dir": str(tmp_path / "model"),
+        "passed": True,
+        "missing_files": [],
+        "zero_size_files": [],
+        "shard_count": 1,
+        "load_checks": {"config": "skipped", "tokenizer": "skipped"},
+        "errors": [],
+    }
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_local_model, "check_model_files", lambda _path: result)
+    monkeypatch.setattr(
+        check_local_model.sys,
+        "argv",
+        [
+            "check_local_model.py",
+            "--skip-transformers-load",
+        ],
+    )
+
+    exit_code = check_local_model.main()
+
+    json_path = tmp_path / "reports" / "model_check_report.json"
+    report = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert report["kind"] == "model"
+    assert report["passed"] is True
+    assert report["payload"] == result

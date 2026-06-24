@@ -10,7 +10,7 @@ from collections import Counter
 from statistics import mean
 from typing import Any
 
-from small_model_train.agent_review import REVIEWERS
+from small_model_train.agent_review import REVIEWERS, SAFE_ISSUE_LABEL_RE
 from small_model_train.execution_cards import VALID_TARGET_PLATFORMS
 
 
@@ -106,6 +106,39 @@ def validate_agent_summary(
     if type(agent_summary["agent_gate_pass"]) is not bool:
         raise ValueError("agent summary agent_gate_pass must be a boolean")
 
+    if "review_backend" in agent_summary:
+        review_backend = agent_summary["review_backend"]
+        if (
+            not isinstance(review_backend, str)
+            or not review_backend.strip()
+            or not SAFE_ISSUE_LABEL_RE.fullmatch(review_backend)
+        ):
+            raise ValueError(
+                "agent summary review_backend must be a non-empty safe value"
+            )
+
+    if "projection_only" in agent_summary:
+        if type(agent_summary["projection_only"]) is not bool:
+            raise ValueError("agent summary projection_only must be a boolean")
+        if agent_summary["projection_only"] and agent_summary["agent_gate_pass"]:
+            raise ValueError(
+                "agent summary projection_only conflicts with agent_gate_pass"
+            )
+
+    if agent_summary.get("review_backend") == "rule_projection":
+        if agent_summary.get("projection_only") is not True:
+            raise ValueError(
+                "agent summary rule_projection requires projection_only true"
+            )
+        if agent_summary["agent_gate_pass"] is not False:
+            raise ValueError(
+                "agent summary rule_projection requires agent_gate_pass false"
+            )
+        if decision != "rules_pass_agent_pending":
+            raise ValueError(
+                "agent summary rule_projection requires rules_pass_agent_pending decision"
+            )
+
     for field in (
         "missing_review_ids",
         "blocked_ids",
@@ -136,6 +169,7 @@ def validate_agent_summary(
         or bool(agent_summary["blocked_ids"])
         or bool(agent_summary["arbitration_ids"])
         or bool(agent_summary["malformed_review_rows"])
+        or bool(agent_summary.get("projection_only"))
         or agent_summary["reviewed_rows"] != agent_summary["expected_rows"]
     )
     if decision in ready_decisions and has_blocking_state:
@@ -148,6 +182,15 @@ def validate_agent_summary(
 def _duplicate_ids(rows: list[dict[str, Any]]) -> list[str]:
     counts: Counter[str] = Counter(str(row.get("id", "")) for row in rows)
     return sorted(sample_id for sample_id, count in counts.items() if sample_id and count > 1)
+
+def _generated_outline_text(row: dict[str, Any]) -> str:
+    for field in ("raw_output", "output", "text"):
+        value = row.get(field)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
 def summarize_quality_budget(
     cards: list[dict[str, Any]],
     generated_rows: list[dict[str, Any]],
@@ -182,7 +225,7 @@ def summarize_quality_budget(
         if "outline_leak" not in failures:
             continue
         sample_id = str(row.get("id", ""))
-        output = str(generated_by_id.get(sample_id, {}).get("output", ""))
+        output = _generated_outline_text(generated_by_id.get(sample_id, {}))
         outline_leaks.append(
             {
                 "id": sample_id,

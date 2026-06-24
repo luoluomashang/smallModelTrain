@@ -7,7 +7,47 @@ import sys
 import pytest
 
 from small_model_train.io_utils import read_jsonl, write_jsonl
-from small_model_train.sft_builder import build_sft_rows, render_sft_input
+from small_model_train.prompt_renderer import SYSTEM_PROMPT
+from small_model_train.sft_builder import INSTRUCTION, build_sft_rows, render_sft_input
+
+VALID_STYLE_HASH = "a" * 64
+
+
+def _sft_card(card_id: str = "c1", **overrides) -> dict:
+    card = {
+        "id": card_id,
+        "style_contract": "契约",
+        "previous_summary": "前情",
+        "chapter_goal": "目标",
+        "target_word_count": "2000-2500中文汉字",
+        "chapter_structure": [],
+        "character_states": [],
+        "must_include": [],
+        "must_not_include": [],
+        "ending_hook": "",
+    }
+    card.update(overrides)
+    return card
+
+
+def _approved_sft_card(card_id: str = "c1", **overrides) -> dict:
+    card = _sft_card(
+        card_id,
+        draft_only=False,
+        approval_status="approved",
+        style_contract_id="contract-v1",
+        style_contract_sha256=VALID_STYLE_HASH,
+    )
+    card.update(overrides)
+    return card
+
+
+def _train_chapter(chapter_id: str = "c1") -> dict:
+    return {"id": chapter_id, "text": "正文", "split": "train", "quality_tag": "A"}
+
+
+def test_sft_instruction_reuses_system_prompt():
+    assert INSTRUCTION == SYSTEM_PROMPT
 
 
 def test_render_sft_input_excludes_source_text():
@@ -249,6 +289,119 @@ def test_build_sft_rows_skips_unmatched_card_id():
     assert build_sft_rows(cards, chapters) == []
 
 
+def test_build_sft_rows_rejects_draft_cards_in_formal_mode():
+    card = _approved_sft_card(draft_only=True, approval_status="draft")
+
+    with pytest.raises(ValueError, match="draft card cannot enter formal SFT: c1"):
+        build_sft_rows([card], [_train_chapter()], require_approved_cards=True)
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        _approved_sft_card(draft_only=True, approval_status="draft"),
+        _approved_sft_card(approval_status="pending"),
+    ],
+    ids=["draft", "unapproved"],
+)
+@pytest.mark.parametrize(
+    "chapters",
+    [
+        [],
+        [{**_train_chapter(), "split": "eval"}],
+        [{**_train_chapter(), "quality_tag": "B"}],
+    ],
+    ids=["missing-chapter", "eval-split", "non-a-quality"],
+)
+def test_build_sft_rows_formal_mode_skips_non_sft_candidates_before_approval_gate(card, chapters):
+    assert build_sft_rows([card], chapters, require_approved_cards=True) == []
+
+
+@pytest.mark.parametrize("approval_status", [None, "draft", "pending"])
+def test_build_sft_rows_rejects_missing_or_unapproved_status_in_formal_mode(approval_status):
+    card = _approved_sft_card()
+    if approval_status is None:
+        del card["approval_status"]
+    else:
+        card["approval_status"] = approval_status
+
+    with pytest.raises(ValueError, match="approval_status.*c1"):
+        build_sft_rows([card], [_train_chapter()], require_approved_cards=True)
+
+
+def test_build_sft_rows_rejects_missing_style_contract_id_in_formal_mode():
+    card = _approved_sft_card()
+    del card["style_contract_id"]
+
+    with pytest.raises(ValueError, match="style_contract_id.*c1"):
+        build_sft_rows([card], [_train_chapter()], require_approved_cards=True)
+
+
+@pytest.mark.parametrize("style_hash", ["", "not-hex", "g" * 64, "a" * 63])
+def test_build_sft_rows_rejects_invalid_style_contract_hash_in_formal_mode(style_hash):
+    card = _approved_sft_card(style_contract_sha256=style_hash)
+
+    with pytest.raises(ValueError, match="style_contract_sha256.*c1"):
+        build_sft_rows([card], [_train_chapter()], require_approved_cards=True)
+
+
+@pytest.mark.parametrize("approval_status", ["approved", "frozen"])
+def test_build_sft_rows_accepts_approved_or_frozen_cards_in_formal_mode(approval_status):
+    card = _approved_sft_card(approval_status=approval_status)
+
+    rows = build_sft_rows([card], [_train_chapter()], require_approved_cards=True)
+
+    assert rows[0]["output"] == "正文"
+
+
+def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_flag(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "sft.jsonl"
+    allowed_output_path = tmp_path / "sft_allowed.jsonl"
+    write_jsonl(cards_path, [_approved_sft_card(draft_only=True, approval_status="draft")])
+    write_jsonl(chapters_path, [_train_chapter()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "draft card cannot enter formal SFT: c1" in result.stderr
+    assert not output_path.exists()
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(allowed_output_path),
+            "--allow-draft-cards",
+        ],
+        check=True,
+    )
+
+    rows = read_jsonl(allowed_output_path)
+    assert len(rows) == 1
+    assert rows[0]["output"] == "正文"
+
+
 def test_build_sft_dataset_cli_writes_jsonl_without_source_text(tmp_path):
     cards_path = tmp_path / "cards.jsonl"
     chapters_path = tmp_path / "chapters.jsonl"
@@ -286,6 +439,7 @@ def test_build_sft_dataset_cli_writes_jsonl_without_source_text(tmp_path):
             str(chapters_path),
             "--output",
             str(output_path),
+            "--allow-draft-cards",
         ],
         check=True,
     )
@@ -334,6 +488,7 @@ def test_build_sft_dataset_cli_writes_llamafactory_dataset_info(tmp_path):
             str(output_path),
             "--dataset-info-output",
             str(dataset_info_path),
+            "--allow-draft-cards",
         ],
         check=True,
     )

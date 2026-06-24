@@ -3,17 +3,21 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from small_model_train.execution_cards import DEFAULT_TARGET_PLATFORM
 from small_model_train.io_utils import write_jsonl
+from small_model_train.prompt_renderer import prompt_sha256
 from small_model_train.stage2_inference import (
     build_generation_row,
     default_inference_params,
     load_eval_cards,
+    render_eval_model_input,
     render_eval_prompt,
     sanitize_generated_output,
+    sanitize_generated_output_with_events,
 )
 from small_model_train.text_utils import count_chinese_chars
 
@@ -88,6 +92,16 @@ class _FakePipe:
         pass
 
 
+class _RecordingTokenizer:
+    def __init__(self) -> None:
+        self.tokenize = None
+        self.add_generation_prompt = None
+
+    def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+        self.tokenize = tokenize
+        self.add_generation_prompt = add_generation_prompt
+        return "templated-prefix"
+
 
 def test_load_eval_cards_requires_execution_card_schema(tmp_path):
     cards_path = tmp_path / "raw_eval_cards.jsonl"
@@ -111,6 +125,32 @@ def test_render_eval_prompt_contains_card_fields():
     assert "不应该泄漏到提示词" not in prompt
 
 
+def test_render_eval_prompt_rejects_source_text_fragment_leakage():
+    card = _card()
+    card["previous_summary"] = "这是一段不应该泄漏到提示词"
+
+    with pytest.raises(ValueError, match="SFT input contains source_text fragment"):
+        render_eval_prompt(card)
+
+
+def test_render_eval_model_input_uses_tokenizer_chat_template():
+    tokenizer = _RecordingTokenizer()
+
+    rendered = render_eval_model_input(_card(), tokenizer)
+
+    assert rendered == "templated-prefix"
+    assert tokenizer.tokenize is False
+    assert tokenizer.add_generation_prompt is True
+
+
+def test_render_eval_model_input_rejects_source_text_fragment_leakage():
+    card = _card()
+    card["previous_summary"] = "这是一段不应该泄漏到提示词"
+
+    with pytest.raises(ValueError, match="SFT input contains source_text fragment"):
+        render_eval_model_input(card, _RecordingTokenizer())
+
+
 def test_build_generation_row_uses_fixed_schema():
     params = {"temperature": 0.7}
 
@@ -119,8 +159,15 @@ def test_build_generation_row_uses_fixed_schema():
     assert row == {
         "id": "eval-1",
         "output": "正文",
+        "raw_output": "正文",
+        "sanitized_output": "正文",
         "model": "sft_v1",
+        "adapter_dir": "",
         "params": params,
+        "finish_reason": "unknown",
+        "generated_tokens": 0,
+        "prompt_sha256": "",
+        "sanitizer_events": [],
     }
 
 
@@ -132,6 +179,38 @@ def test_build_generation_row_copies_params():
 
     assert row["params"] == {"temperature": 0.7}
     assert row["params"] is not params
+
+
+def test_build_generation_row_preserves_raw_and_sanitized_evidence():
+    params = {"temperature": 0.7}
+    events = [{"type": "drop_meta_line", "reason": "outline_heading", "line_number": 2}]
+
+    row = build_generation_row(
+        "eval-1",
+        "【章节结构】\n正文",
+        "sft_v1",
+        params,
+        sanitized_output="正文",
+        adapter_dir="outputs/sft_v1",
+        finish_reason="length",
+        generated_tokens=128,
+        prompt_sha256="abc123",
+        sanitizer_events=events,
+    )
+
+    assert row == {
+        "id": "eval-1",
+        "output": "【章节结构】\n正文",
+        "raw_output": "【章节结构】\n正文",
+        "sanitized_output": "正文",
+        "model": "sft_v1",
+        "adapter_dir": "outputs/sft_v1",
+        "params": {"temperature": 0.7},
+        "finish_reason": "length",
+        "generated_tokens": 128,
+        "prompt_sha256": "abc123",
+        "sanitizer_events": events,
+    }
 
 
 def test_default_inference_params_match_stage2_eval_defaults():
@@ -163,6 +242,40 @@ def test_sanitize_generated_output_removes_outline_blocks_and_keeps_prose():
     assert "【" not in cleaned
     assert "章节结构" not in cleaned
     assert "承接" not in cleaned
+
+
+def test_sanitize_generated_output_with_events_keeps_audit_trail():
+    raw = "\n".join(
+        [
+            "我推开门，雨声从楼道深处涌了进来。她没有回头，只把铜钥匙压在掌心。",
+            "【章节结构】",
+            "承接旧线索",
+            "- 加压：制造阻碍",
+            "---",
+            "第二个人的呼吸声从门后停住。",
+        ]
+    )
+
+    sanitized, events = sanitize_generated_output_with_events(raw, max_chinese_chars=12)
+
+    assert "【章节结构】" in raw
+    assert "【章节结构】" not in sanitized
+    assert count_chinese_chars(sanitized) == 12
+    assert {event["type"] for event in events} == {
+        "drop_meta_line",
+        "drop_meta_continuation",
+        "drop_list_line",
+        "drop_separator",
+        "cap_chinese_chars",
+    }
+    assert all("reason" in event for event in events)
+    line_events = [event for event in events if event["type"].startswith("drop_")]
+    cap_event = next(event for event in events if event["type"] == "cap_chinese_chars")
+    assert [event["line_number"] for event in line_events] == [2, 3, 4, 5]
+    assert all(event["preview"] and len(event["preview"]) <= 80 for event in line_events)
+    assert cap_event["preview"]
+    assert len(cap_event["preview"]) <= 80
+    assert cap_event["preview"] != raw
 
 
 def test_sanitize_generated_output_drops_inline_meta_directives():
@@ -249,8 +362,30 @@ def test_dry_run_cli_writes_generation_rows_without_subprocess(
     assert rows[0]["id"] == "eval-1"
     assert rows[0]["model"] == "dry_eval"
     assert rows[0]["output"].startswith("[DRY RUN] ")
-    assert rows[0]["params"] == default_inference_params()
-    assert set(rows[0]) == {"id", "output", "model", "params"}
+    assert rows[0]["raw_output"] == rows[0]["output"]
+    assert rows[0]["sanitized_output"] == rows[0]["output"]
+    assert rows[0]["sanitizer_events"] == []
+    for row, card in zip(rows, cards):
+        expected_hash = prompt_sha256(render_eval_model_input(card))
+        assert row["prompt_sha256"] == expected_hash
+        assert len(row["prompt_sha256"]) == 64
+        int(row["prompt_sha256"], 16)
+    params = default_inference_params()
+    params["seed"] = 20260623
+    assert rows[0]["params"] == params
+    assert set(rows[0]) == {
+        "id",
+        "output",
+        "raw_output",
+        "sanitized_output",
+        "model",
+        "adapter_dir",
+        "params",
+        "finish_reason",
+        "generated_tokens",
+        "prompt_sha256",
+        "sanitizer_events",
+    }
 
 
 def test_dry_run_cli_records_max_new_tokens_override(
@@ -282,6 +417,7 @@ def test_dry_run_cli_records_max_new_tokens_override(
 
     params = default_inference_params()
     params["max_new_tokens"] = 128
+    params["seed"] = 20260623
     assert exit_code == 0
     assert _read_jsonl(output_path)[0]["params"] == params
 
@@ -315,6 +451,7 @@ def test_dry_run_cli_records_repetition_penalty_override(
 
     params = default_inference_params()
     params["repetition_penalty"] = 1.12
+    params["seed"] = 20260623
     assert exit_code == 0
     assert _read_jsonl(output_path)[0]["params"] == params
 
@@ -348,6 +485,40 @@ def test_dry_run_cli_records_no_repeat_ngram_size_override(
 
     params = default_inference_params()
     params["no_repeat_ngram_size"] = 8
+    params["seed"] = 20260623
+    assert exit_code == 0
+    assert _read_jsonl(output_path)[0]["params"] == params
+
+
+def test_dry_run_cli_records_seed_override(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import run_eval_inference
+
+    cards_path = tmp_path / "cards.jsonl"
+    output_path = tmp_path / "generated.jsonl"
+    write_jsonl(cards_path, [_card("eval-1")])
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("dry-run must not call subprocess.run")
+
+    monkeypatch.setattr(run_eval_inference.subprocess, "run", fail_run)
+
+    exit_code = run_eval_inference.main(
+        [
+            "--cards",
+            str(cards_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+            "--seed",
+            "12345",
+        ]
+    )
+
+    params = default_inference_params()
+    params["seed"] = 12345
     assert exit_code == 0
     assert _read_jsonl(output_path)[0]["params"] == params
 
@@ -590,6 +761,143 @@ def test_worker_cli_rejects_non_positive_no_repeat_ngram_size(
     assert "must be a positive integer" in capsys.readouterr().err
 
 
+def test_worker_main_uses_model_input_and_preserves_raw_generation(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from scripts import stage2_eval_worker
+
+    cards_path = tmp_path / "cards.jsonl"
+    output_path = tmp_path / "generated.jsonl"
+    write_jsonl(cards_path, [_card("eval-1")])
+
+    seed_calls: list[int] = []
+    cuda_seed_calls: list[int] = []
+
+    class FakeInputs(dict):
+        def __init__(self) -> None:
+            super().__init__(input_ids=SimpleNamespace(shape=(1, 2)))
+
+        def to(self, device):
+            self["device"] = device
+            return self
+
+    class FakeTokenizer:
+        eos_token = "<eos>"
+        eos_token_id = 99
+        pad_token_id = None
+
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        def __call__(self, prompt, *, return_tensors, add_special_tokens):
+            self.prompts.append(prompt)
+            assert return_tensors == "pt"
+            assert add_special_tokens is False
+            return FakeInputs()
+
+        def decode(self, tokens, *, skip_special_tokens):
+            assert list(tokens) == [31, 32, 33]
+            assert skip_special_tokens is True
+            return "【章节结构】\n- 加压：制造阻碍\n正文来了。"
+
+    class FakeModel:
+        device = "cpu"
+
+        def eval(self):
+            return None
+
+        def generate(self, **kwargs):
+            assert kwargs["max_new_tokens"] == 5120
+            return [[10, 11, 31, 32, 33]]
+
+    fake_tokenizer = FakeTokenizer()
+    fake_model = FakeModel()
+
+    monkeypatch.setattr(
+        stage2_eval_worker,
+        "render_eval_model_input",
+        lambda card, tokenizer: "MODEL PREFIX",
+        raising=False,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            manual_seed=lambda seed: seed_calls.append(seed),
+            cuda=SimpleNamespace(
+                is_available=lambda: True,
+                manual_seed_all=lambda seed: cuda_seed_calls.append(seed),
+            ),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(
+                from_pretrained=lambda *args, **kwargs: fake_tokenizer
+            ),
+            AutoModelForCausalLM=SimpleNamespace(
+                from_pretrained=lambda *args, **kwargs: object()
+            ),
+            BitsAndBytesConfig=lambda **kwargs: SimpleNamespace(**kwargs),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "peft",
+        SimpleNamespace(
+            PeftModel=SimpleNamespace(
+                from_pretrained=lambda base_model, adapter_dir: fake_model
+            )
+        ),
+    )
+
+    exit_code = stage2_eval_worker.main(
+        [
+            "--cards",
+            str(cards_path),
+            "--model-dir",
+            "model",
+            "--adapter-dir",
+            "adapter",
+            "--output",
+            str(output_path),
+            "--seed",
+            "12345",
+        ]
+    )
+
+    row = _read_jsonl(output_path)[0]
+    assert exit_code == 0
+    assert seed_calls == [12345]
+    assert cuda_seed_calls == [12345]
+    assert fake_tokenizer.prompts == ["MODEL PREFIX"]
+    assert row["output"] == "【章节结构】\n- 加压：制造阻碍\n正文来了。"
+    assert row["raw_output"] == row["output"]
+    assert row["sanitized_output"] == "正文来了。"
+    assert row["adapter_dir"] == "adapter"
+    assert row["generated_tokens"] == 3
+    assert row["params"]["seed"] == 12345
+    assert isinstance(row["prompt_sha256"], str)
+    assert len(row["prompt_sha256"]) == 64
+    assert {event["type"] for event in row["sanitizer_events"]} == {
+        "drop_meta_line",
+        "drop_list_line",
+    }
+
+
+def test_generated_token_count_uses_tensor_numel():
+    from scripts.stage2_eval_worker import _generated_token_count
+
+    class TensorLike:
+        def numel(self):
+            return "7"
+
+    assert _generated_token_count(TensorLike()) == 7
+
+
 def test_non_dry_run_success_writes_and_echoes_stdout(
     tmp_path: Path,
     monkeypatch,
@@ -663,11 +971,15 @@ def test_build_worker_command_omits_max_new_tokens_by_default(tmp_path: Path):
         output=tmp_path / "generated.jsonl",
         model_name="sft_v1",
         max_new_tokens=None,
+        repetition_penalty=None,
+        no_repeat_ngram_size=None,
+        seed=20260623,
     )
 
     command = run_eval_inference._build_worker_command(args)
 
     assert "--max-new-tokens" not in command
+    assert command[-2:] == ["--seed", "20260623"]
 
 
 def test_build_worker_command_includes_max_new_tokens_when_supplied(tmp_path: Path):
@@ -680,6 +992,9 @@ def test_build_worker_command_includes_max_new_tokens_when_supplied(tmp_path: Pa
         output=tmp_path / "generated.jsonl",
         model_name="sft_v1",
         max_new_tokens=96,
+        repetition_penalty=None,
+        no_repeat_ngram_size=None,
+        seed=20260623,
     )
 
     command = run_eval_inference._build_worker_command(args)
@@ -700,6 +1015,8 @@ def test_build_worker_command_includes_repetition_penalty_when_supplied(
         model_name="sft_v1",
         max_new_tokens=None,
         repetition_penalty=1.12,
+        no_repeat_ngram_size=None,
+        seed=20260623,
     )
 
     command = run_eval_inference._build_worker_command(args)
@@ -721,11 +1038,32 @@ def test_build_worker_command_includes_no_repeat_ngram_size_when_supplied(
         max_new_tokens=None,
         repetition_penalty=None,
         no_repeat_ngram_size=8,
+        seed=20260623,
     )
 
     command = run_eval_inference._build_worker_command(args)
 
     assert command[-2:] == ["--no-repeat-ngram-size", "8"]
+
+
+def test_build_worker_command_includes_seed_when_supplied(tmp_path: Path):
+    from scripts import run_eval_inference
+
+    args = argparse.Namespace(
+        cards=tmp_path / "cards.jsonl",
+        model_dir="model",
+        adapter_dir="adapter",
+        output=tmp_path / "generated.jsonl",
+        model_name="sft_v1",
+        max_new_tokens=None,
+        repetition_penalty=None,
+        no_repeat_ngram_size=None,
+        seed=12345,
+    )
+
+    command = run_eval_inference._build_worker_command(args)
+
+    assert command[-2:] == ["--seed", "12345"]
 
 
 def test_non_dry_run_failure_writes_logs_events_and_classification(
@@ -790,6 +1128,8 @@ def test_non_dry_run_failure_writes_logs_events_and_classification(
                 str(output_path),
                 "--model-name",
                 "sft_v1",
+                "--seed",
+                "20260623",
             ],
             {
                 "stdout": subprocess.PIPE,

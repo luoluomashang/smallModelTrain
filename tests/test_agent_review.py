@@ -72,6 +72,22 @@ def test_validate_review_row_accepts_known_reviewer():
     assert validate_review_row(row) == row
 
 
+def test_validate_review_row_accepts_optional_review_backend():
+    row = _review("case1", "readthrough_structure", True)
+    row["review_backend"] = "rule_projection"
+
+    assert validate_review_row(row) == row
+
+
+@pytest.mark.parametrize("review_backend", ["", "  ", "unsafe backend", "#backend"])
+def test_validate_review_row_blocks_unsafe_review_backend(review_backend: str):
+    row = _review("case1", "readthrough_structure", True)
+    row["review_backend"] = review_backend
+
+    with pytest.raises(ValueError, match="review_backend must be a non-empty safe value"):
+        validate_review_row(row)
+
+
 def test_validate_review_row_blocks_unknown_reviewer():
     row = _review("case1", "unknown_agent", True)
 
@@ -108,6 +124,36 @@ def test_validate_review_row_blocks_non_list_fields(field: str):
     row[field] = "not a list"
 
     with pytest.raises(ValueError, match=f"{field} must be a list"):
+        validate_review_row(row)
+
+
+
+def test_validate_review_row_accepts_legacy_string_and_structured_evidence():
+    row = _review("case1", "readthrough_structure", False)
+    row["evidence"] = [
+        "legacy note",
+        {"quote": "铜钥匙在雨声里发亮。", "start": 12, "end": 24},
+    ]
+
+    assert validate_review_row(row) == row
+
+
+@pytest.mark.parametrize(
+    "evidence_item",
+    [
+        {},
+        {"quote": "", "start": 0, "end": 1},
+        {"quote": "valid", "start": -1, "end": 1},
+        {"quote": "valid", "start": 2, "end": 1},
+        {"quote": "valid", "start": True, "end": 1},
+        {"quote": "valid", "start": 0, "end": 1, "extra": "unsafe"},
+    ],
+)
+def test_validate_review_row_blocks_malformed_structured_evidence(evidence_item: dict):
+    row = _review("case1", "readthrough_structure", False)
+    row["evidence"] = [evidence_item]
+
+    with pytest.raises(ValueError, match="evidence items must be strings or quote spans"):
         validate_review_row(row)
 
 

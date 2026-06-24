@@ -13,6 +13,7 @@ REVIEWERS = {
 }
 SEVERITIES = {"none", "minor", "major", "blocker"}
 SAFE_ISSUE_LABEL_RE = re.compile(r"^[a-z0-9_]{1,80}$")
+EVIDENCE_SPAN_KEYS = {"quote", "start", "end"}
 
 REQUIRED_REVIEW_FIELDS = (
     "id",
@@ -27,6 +28,27 @@ REQUIRED_REVIEW_FIELDS = (
     "recommendation",
     "confidence",
 )
+
+
+def _is_valid_evidence_item(item: Any) -> bool:
+    if isinstance(item, str):
+        return True
+    if not isinstance(item, dict):
+        return False
+    if set(item) != EVIDENCE_SPAN_KEYS:
+        return False
+
+    quote = item["quote"]
+    start = item["start"]
+    end = item["end"]
+    return (
+        isinstance(quote, str)
+        and bool(quote.strip())
+        and type(start) is int
+        and start >= 0
+        and type(end) is int
+        and end >= start
+    )
 
 
 def validate_review_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -53,6 +75,15 @@ def validate_review_row(row: dict[str, Any]) -> dict[str, Any]:
     if target_platform not in VALID_TARGET_PLATFORMS:
         raise ValueError(f"unknown target_platform: {target_platform}")
 
+    if "review_backend" in row:
+        review_backend = row["review_backend"]
+        if (
+            not isinstance(review_backend, str)
+            or not review_backend.strip()
+            or not SAFE_ISSUE_LABEL_RE.fullmatch(review_backend)
+        ):
+            raise ValueError("review_backend must be a non-empty safe value")
+
     if type(row["pass"]) is not bool:
         raise ValueError("pass must be a boolean")
 
@@ -64,6 +95,8 @@ def validate_review_row(row: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("issues must contain non-empty strings")
     if not all(SAFE_ISSUE_LABEL_RE.fullmatch(issue) for issue in row["issues"]):
         raise ValueError("issues must be safe code-like labels")
+    if not all(_is_valid_evidence_item(item) for item in row["evidence"]):
+        raise ValueError("evidence items must be strings or quote spans")
 
     return row
 

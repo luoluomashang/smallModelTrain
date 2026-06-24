@@ -109,6 +109,55 @@ def test_score_outputs_cli_reads_cards_and_outputs_jsonl(tmp_path):
     assert "forbidden_violation" in rows[0]["failure_types"]
 
 
+def test_score_outputs_cli_prefers_raw_output_over_sanitized_and_output(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    outputs_path = tmp_path / "outputs.jsonl"
+    scores_path = tmp_path / "scores.jsonl"
+    clean_output = "林默说加钱。" * 500
+    raw_output = "【章节结构】\n" + clean_output
+    write_jsonl(
+        cards_path,
+        [
+            dict(
+                _execution_card("case1"),
+                must_include=[],
+                must_not_include=[],
+            )
+        ],
+    )
+    write_jsonl(
+        outputs_path,
+        [
+            {
+                "id": "case1",
+                "output": clean_output,
+                "sanitized_output": clean_output,
+                "raw_output": raw_output,
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/score_outputs.py",
+            "--cards",
+            str(cards_path),
+            "--outputs",
+            str(outputs_path),
+            "--output",
+            str(scores_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_jsonl(scores_path)
+    assert "outline_leak" in rows[0]["failure_types"]
+
+
 def test_score_outputs_cli_rejects_raw_cards(tmp_path):
     cards_path = tmp_path / "cards.jsonl"
     outputs_path = tmp_path / "outputs.jsonl"
