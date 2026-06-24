@@ -74,6 +74,7 @@ python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards
 - [第四阶段 Smoke Eval 指南](docs/stage4-smoke-eval-guide.zh.md)
 - [Stage 4.1 Quality Eval Hardening 指南](docs/stage4-1-quality-eval-guide.zh.md)
 - [Stage 5A 证据链修正操作指南](docs/stage5a-evidence-chain-hardening.zh.md)
+- [Stage 5B StyleContract 闭环指南](docs/stage5b-style-contract-closure.zh.md)
 - [Stage 4 决策日志](docs/stage4-decision-log.zh.md)
 - [第四阶段总结与下一阶段前瞻](docs/stage4-summary-next-outlook.zh.md)
 

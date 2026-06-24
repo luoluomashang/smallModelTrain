@@ -9,7 +9,7 @@ data_raw/novels/
   -> data_clean/chapters_raw.jsonl
   -> data_clean/chapters.jsonl
   -> data_clean/chapters_split.jsonl + data_cards/eval_cards_50.jsonl
-  -> style_contract.md + style_profile.json
+  -> data_style/style_contract_author_main_v1.json + style_contract.md + data_style/style_metrics_author_main_v1.json
   -> data_cards/chapter_cards.jsonl
   -> data_sft/sft_chapter_v1.jsonl
   -> data_cards/eval_execution_cards_50.jsonl
@@ -72,18 +72,21 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 
 输入：`data_clean/chapters_split.jsonl`
 
+Stage 5B 起，风格资产由 `scripts/build_style_contract.py` 生成三件套：`data_style/style_contract_author_main_v1.json`、`style_contract.md`、`data_style/style_metrics_author_main_v1.json`。JSON 是 formal SFT 的机器门禁源，Markdown 只用于人工审阅。
+
 命令：
 
 ```powershell
-python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-output style_contract.md --profile-output style_profile.json
+python scripts/build_style_contract.py --chapters data_clean/chapters_split.jsonl --contract-json-output data_style/style_contract_author_main_v1.json --contract-output style_contract.md --metrics-output data_style/style_metrics_author_main_v1.json --style-contract-id author_main_v1
 ```
 
 输出：
 
+- `data_style/style_contract_author_main_v1.json`
 - `style_contract.md`
-- `style_profile.json`
+- `data_style/style_metrics_author_main_v1.json`
 
-成功标志：Markdown 里有风格摘要，JSON 里有统计字段。
+成功标志：StyleContract JSON 里有 id、hash 和 approval status，Markdown 里有风格摘要，metrics JSON 里有统计字段。默认 `pending_review` 只能供审阅和 smoke/dev 引用，不能进入 formal SFT。
 
 ## 5. 生成章节卡
 
