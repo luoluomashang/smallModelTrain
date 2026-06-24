@@ -134,6 +134,7 @@ def main() -> int:
     formal_evidence = (
         not args.dry_run
         and training_exit_code == 0
+        and all(report.get("passed") is True for report in preflight_reports.values())
         and adapter_check.get("passed") is True
         and sft_summary.get("schema", {}).get("valid") is True
         and isinstance(eval_summary, dict)
@@ -176,7 +177,11 @@ def _style_contract_for_manifest(path: str | Path | None) -> dict[str, object] |
     except ValueError as exc:
         return {
             "path": str(path),
-            "schema": {"valid": False, "errors": [str(exc)]},
+            "schema": {
+                "name": "style_contract",
+                "valid": False,
+                "errors": [str(exc)],
+            },
         }
     return {
         "path": str(path),
@@ -184,7 +189,7 @@ def _style_contract_for_manifest(path: str | Path | None) -> dict[str, object] |
         "style_contract_id": asset["style_contract_id"],
         "contract_sha256": asset["contract_sha256"],
         "approval_status": asset["approval_status"],
-        "schema": {"valid": True, "errors": []},
+        "schema": {"name": "style_contract", "valid": True, "errors": []},
     }
 
 

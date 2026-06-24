@@ -1138,7 +1138,169 @@ def test_run_sft_train_dry_run_records_style_contract_provenance(
     assert manifest["style_contract"]["style_contract_id"] == contract["style_contract_id"]
     assert manifest["style_contract"]["contract_sha256"] == contract["contract_sha256"]
     assert manifest["style_contract"]["approval_status"] == "approved"
+    assert manifest["style_contract"]["schema"]["name"] == "style_contract"
     assert manifest["style_contract"]["schema"]["valid"] is True
+    assert manifest["formal_evidence"] is False
+
+
+@pytest.mark.parametrize(
+    ("approval_status", "expected_formal_evidence"),
+    [
+        ("approved", True),
+        ("frozen", True),
+        ("pending_review", False),
+        ("rejected", False),
+        ("draft", False),
+    ],
+)
+def test_run_sft_train_formal_evidence_requires_approved_or_frozen_style_contract(
+    monkeypatch,
+    tmp_path: Path,
+    approval_status: str,
+    expected_formal_evidence: bool,
+):
+    from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset(approval_status)
+    write_style_contract_asset(contract_path, contract)
+
+    model_report = tmp_path / "reports" / "model.json"
+    env_report = tmp_path / "reports" / "env.json"
+    write_json_preflight(model_report, kind="model", passed=True)
+    write_json_preflight(env_report, kind="environment", passed=True)
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    write_valid_adapter(output_dir)
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_subprocess",
+        lambda _run: {
+            "exit_code": 0,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "none", "suggestion": "无"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(model_report),
+            "--env-report-json",
+            str(env_report),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(contract_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert run_sft_train.main() == 0
+    manifest = json.loads((output_dir / "run_manifest.json").read_text("utf-8"))
+    assert manifest["adapter_check"]["passed"] is True
+    assert manifest["sft_dataset"]["schema"]["valid"] is True
+    assert manifest["eval_cards"]["schema"]["valid"] is True
+    assert manifest["style_contract"]["schema"]["name"] == "style_contract"
+    assert manifest["style_contract"]["schema"]["valid"] is True
+    assert manifest["style_contract"]["approval_status"] == approval_status
+    assert manifest["formal_evidence"] is expected_formal_evidence
+
+
+def test_run_sft_train_formal_evidence_requires_passed_preflight_reports(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from scripts import run_sft_train
+    from small_model_train.style_contract import write_style_contract_asset
+
+    sft_dataset = tmp_path / "data" / "sft.jsonl"
+    eval_cards = tmp_path / "data" / "eval.jsonl"
+    contract_path = tmp_path / "data_style" / "style_contract.json"
+    sft_dataset.parent.mkdir(parents=True)
+    sft_dataset.write_text("{}\n", encoding="utf-8")
+    write_jsonl(eval_cards, [_execution_card("case1")])
+    contract = _style_contract_asset("approved")
+    write_style_contract_asset(contract_path, contract)
+
+    write_valid_adapter(tmp_path / "outputs" / "sft_smoke")
+
+    output_dir = tmp_path / "outputs" / "sft_v1"
+    write_valid_adapter(output_dir)
+    config_path = output_dir / "training_config_snapshot.yaml"
+
+    def fake_build_train_run(**kwargs):
+        return {
+            "name": kwargs["name"],
+            "config_path": str(config_path),
+            "command": ["llamafactory-cli", "train", str(config_path)],
+        }
+
+    monkeypatch.setattr(run_sft_train, "build_train_run", fake_build_train_run)
+    monkeypatch.setattr(
+        run_sft_train,
+        "run_training_subprocess",
+        lambda _run: {
+            "exit_code": 0,
+            "command_text": f"llamafactory-cli train {config_path}",
+            "error": {"error_type": "none", "suggestion": "无"},
+        },
+    )
+    monkeypatch.setattr(
+        run_sft_train.sys,
+        "argv",
+        [
+            "run_sft_train.py",
+            "--skip-prereq-checks",
+            "--sft-dataset",
+            str(sft_dataset),
+            "--eval-cards",
+            str(eval_cards),
+            "--model-report-json",
+            str(tmp_path / "missing" / "model.json"),
+            "--env-report-json",
+            str(tmp_path / "missing" / "env.json"),
+            "--smoke-adapter-dir",
+            str(tmp_path / "outputs" / "sft_smoke"),
+            "--style-contract-json",
+            str(contract_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert run_sft_train.main() == 0
+    manifest = json.loads((output_dir / "run_manifest.json").read_text("utf-8"))
+    assert manifest["adapter_check"]["passed"] is True
+    assert manifest["sft_dataset"]["schema"]["valid"] is True
+    assert manifest["eval_cards"]["schema"]["valid"] is True
+    assert manifest["style_contract"]["approval_status"] == "approved"
+    assert manifest["preflight_reports"]["model"]["passed"] is False
+    assert manifest["preflight_reports"]["environment"]["passed"] is False
     assert manifest["formal_evidence"] is False
 
 
@@ -1250,6 +1412,20 @@ def test_run_sft_train_rejects_invalid_style_contract_before_manifest(
     assert run_sft_train.main() == 1
     assert "is not valid JSON" in capsys.readouterr().err
     assert not (output_dir / "run_manifest.json").exists()
+
+
+def test_style_contract_manifest_summary_records_invalid_schema_name(tmp_path: Path):
+    from scripts.run_sft_train import _style_contract_for_manifest
+
+    invalid_contract = tmp_path / "style_contract.json"
+    invalid_contract.write_text("{not json\n", encoding="utf-8")
+
+    summary = _style_contract_for_manifest(invalid_contract)
+
+    assert summary is not None
+    assert summary["schema"]["name"] == "style_contract"
+    assert summary["schema"]["valid"] is False
+    assert "is not valid JSON" in "\n".join(summary["schema"]["errors"])
 
 
 def test_run_sft_train_dry_run_records_pending_style_contract_without_formal_evidence(
