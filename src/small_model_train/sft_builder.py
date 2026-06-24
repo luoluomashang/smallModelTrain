@@ -110,4 +110,6 @@ def build_sft_rows(
                 "output": chapter.get("text", ""),
             }
         )
+    if require_approved_cards and style_contract is None:
+        raise ValueError("style contract JSON is required for formal SFT")
     return rows

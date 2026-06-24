@@ -314,7 +314,17 @@ def test_build_sft_rows_rejects_draft_cards_in_formal_mode():
     ids=["missing-chapter", "eval-split", "non-a-quality"],
 )
 def test_build_sft_rows_formal_mode_skips_non_sft_candidates_before_approval_gate(card, chapters):
-    assert build_sft_rows([card], chapters, require_approved_cards=True) == []
+    contract = _style_contract_asset("approved")
+
+    assert (
+        build_sft_rows(
+            [card],
+            chapters,
+            require_approved_cards=True,
+            style_contract=contract,
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize("approval_status", [None, "draft", "pending"])
@@ -636,6 +646,34 @@ def test_build_sft_rows_accepts_matching_approved_style_contract():
     assert rows[0]["output"] == "正文"
 
 
+def test_build_sft_rows_accepts_matching_frozen_style_contract():
+    contract = _style_contract_asset("frozen")
+    card = _approved_sft_card(
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+    )
+
+    rows = build_sft_rows(
+        [card],
+        [_train_chapter()],
+        require_approved_cards=True,
+        style_contract=contract,
+    )
+
+    assert rows[0]["output"] == "正文"
+
+
+def test_build_sft_rows_requires_style_contract_even_without_trainable_candidates():
+    card = _approved_sft_card()
+
+    with pytest.raises(ValueError, match="style contract JSON is required for formal SFT"):
+        build_sft_rows(
+            [card],
+            [{**_train_chapter(), "split": "eval"}],
+            require_approved_cards=True,
+        )
+
+
 def test_build_sft_dataset_cli_requires_style_contract_json_for_formal(tmp_path):
     cards_path = tmp_path / "cards.jsonl"
     chapters_path = tmp_path / "chapters.jsonl"
@@ -662,6 +700,39 @@ def test_build_sft_dataset_cli_requires_style_contract_json_for_formal(tmp_path)
 
     assert result.returncode != 0
     assert "style contract JSON is required for formal SFT" in result.stderr
+    assert not output_path.exists()
+
+
+def test_build_sft_dataset_cli_rejects_missing_style_contract_json_path(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "missing_style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    card = _approved_sft_card()
+    write_jsonl(cards_path, [card])
+    write_jsonl(chapters_path, [_train_chapter()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--style-contract-json",
+            str(contract_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "style contract JSON not found" in result.stderr
+    assert "Traceback" not in result.stderr
     assert not output_path.exists()
 
 

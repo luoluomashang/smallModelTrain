@@ -184,6 +184,8 @@ def read_style_contract_asset(path: str | Path) -> dict[str, Any]:
     input_path = Path(path)
     try:
         asset = json.loads(input_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"style contract JSON not found: {input_path}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"{input_path} is not valid JSON") from exc
     return validate_style_contract_asset(asset)
