@@ -102,6 +102,19 @@ def test_compile_rejects_abstract_only_card():
         )
 
 
+def test_compile_rejects_invalid_list_items():
+    from small_model_train.cards.card_compiler import compile_chapter_execution_card
+
+    with pytest.raises(ValueError, match="must_include must be a list of non-empty strings"):
+        compile_chapter_execution_card(
+            draft_card=_draft_card(must_include=["旧仓库", {"fact": "加钱"}]),
+            chapter=_chapter(),
+            style_contract=_style_contract(),
+            group_id="group-c1",
+            split="train",
+        )
+
+
 def test_render_chapter_execution_input_uses_style_contract_and_formal_sections():
     from small_model_train.cards.card_compiler import compile_chapter_execution_card
     from small_model_train.cards.card_renderer import render_chapter_execution_input
@@ -181,3 +194,36 @@ def test_compile_chapter_execution_cards_cli_writes_reviewed_cards(tmp_path):
     rows = read_jsonl(output_path)
     assert rows[0]["card_status"] == "reviewed"
     assert rows[0]["chapter_id"] == "c1"
+
+
+def test_compile_chapter_execution_cards_cli_rejects_missing_cards_path(tmp_path):
+    from small_model_train.style_contract import write_style_contract_asset
+
+    missing_cards_path = tmp_path / "missing_cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "formal_cards.jsonl"
+    write_jsonl(chapters_path, [_chapter()])
+    write_style_contract_asset(contract_path, _style_contract())
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/compile_chapter_execution_cards.py",
+            "--cards",
+            str(missing_cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--style-contract-json",
+            str(contract_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "cards JSONL not found" in result.stderr
+    assert not output_path.exists()

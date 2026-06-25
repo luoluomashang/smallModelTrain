@@ -26,6 +26,8 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        _require_jsonl_file(args.cards, "cards")
+        _require_jsonl_file(args.chapters, "chapters")
         draft_cards = read_jsonl(args.cards)
         chapters = {chapter.get("id"): chapter for chapter in read_jsonl(args.chapters)}
         style_contract = read_style_contract_asset(args.style_contract_json)
@@ -56,6 +58,11 @@ def _chapter_for(chapters: dict[Any, dict], draft_card: dict) -> dict:
     if chapter is None:
         raise ValueError(f"chapter not found for draft card id: {chapter_id}")
     return chapter
+
+
+def _require_jsonl_file(path: str, label: str) -> None:
+    if not Path(path).is_file():
+        raise ValueError(f"{label} JSONL not found: {path}")
 
 
 if __name__ == "__main__":

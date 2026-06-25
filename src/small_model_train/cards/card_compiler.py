@@ -42,13 +42,13 @@ def compile_chapter_execution_card(
         style_contract_id=validated_contract["style_contract_id"],
         style_contract_sha256=validated_contract["contract_sha256"],
         source_chapter_text=source_chapter_text,
-        target_platform=str(draft_card.get("target_platform") or DEFAULT_TARGET_PLATFORM),
-        genre_tags=_string_list_or_default(draft_card.get("genre_tags"), ["male_webnovel"]),
+        target_platform=_target_platform(draft_card),
+        genre_tags=_string_list_or_default(draft_card, "genre_tags", ["male_webnovel"]),
         hard_constraints={
-            "must_include": _string_list(draft_card.get("must_include")),
-            "must_not_include": _string_list(draft_card.get("must_not_include")),
+            "must_include": _string_list(draft_card, "must_include"),
+            "must_not_include": _string_list(draft_card, "must_not_include"),
             "continuity_facts": _continuity_facts(draft_card),
-            "forbidden_future_facts": _string_list(draft_card.get("forbidden_future_facts")),
+            "forbidden_future_facts": _string_list(draft_card, "forbidden_future_facts"),
             "style_bans": _style_bans(draft_card, validated_contract),
         },
         execution_plan={
@@ -88,7 +88,7 @@ def _reject_abstract_only_card(draft_card: dict[str, Any]) -> None:
         [
             _non_empty_string(draft_card.get("conflict_beat")),
             _non_empty_string(draft_card.get("payoff_beat")),
-            bool(_string_list(draft_card.get("must_include"))),
+            bool(_string_list(draft_card, "must_include")),
             _non_empty_string(draft_card.get("ending_hook")),
         ]
     )
@@ -121,21 +121,36 @@ def _non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _string_list(value: Any) -> list[str]:
-    if value is None:
+def _target_platform(draft_card: dict[str, Any]) -> str:
+    if "target_platform" not in draft_card:
+        return DEFAULT_TARGET_PLATFORM
+    value = draft_card.get("target_platform")
+    if value == "":
+        return DEFAULT_TARGET_PLATFORM
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("target_platform must be a non-empty string")
+    return value.strip()
+
+
+def _string_list(values: dict[str, Any], field: str) -> list[str]:
+    if field not in values:
         return []
+    value = values.get(field)
     if not isinstance(value, list):
-        raise ValueError("expected a list of strings")
-    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        raise ValueError(f"{field} must be a list of non-empty strings")
+    if not all(isinstance(item, str) and item.strip() for item in value):
+        raise ValueError(f"{field} must be a list of non-empty strings")
+    return [item.strip() for item in value]
 
 
-def _string_list_or_default(value: Any, default: list[str]) -> list[str]:
-    values = _string_list(value)
-    return values or list(default)
+def _string_list_or_default(values: dict[str, Any], field: str, default: list[str]) -> list[str]:
+    if field not in values:
+        return list(default)
+    return _string_list(values, field)
 
 
 def _continuity_facts(draft_card: dict[str, Any]) -> list[str]:
-    values = _string_list(draft_card.get("continuity_facts"))
+    values = _string_list(draft_card, "continuity_facts")
     previous_summary = draft_card.get("previous_summary")
     if isinstance(previous_summary, str) and previous_summary.strip():
         values.insert(0, previous_summary.strip())
@@ -143,27 +158,31 @@ def _continuity_facts(draft_card: dict[str, Any]) -> list[str]:
 
 
 def _style_bans(draft_card: dict[str, Any], style_contract: dict[str, Any]) -> list[str]:
-    bans = _string_list(draft_card.get("style_bans"))
-    bans.extend(_string_list(style_contract["ai_taste_guardrails"].get("banned_phrases")))
+    bans = _string_list(draft_card, "style_bans")
+    bans.extend(_string_list(style_contract["ai_taste_guardrails"], "banned_phrases"))
     return list(dict.fromkeys(bans))
 
 
 def _creative_space(draft_card: dict[str, Any]) -> dict[str, list[str]]:
     return {
         "optional_sensory_details": _string_list_or_default(
-            draft_card.get("optional_sensory_details"),
+            draft_card,
+            "optional_sensory_details",
             ["按场景补足气味、声响、光线等具体感官细节"],
         ),
         "optional_dialogue_moves": _string_list_or_default(
-            draft_card.get("optional_dialogue_moves"),
+            draft_card,
+            "optional_dialogue_moves",
             ["用短对白、停顿和反问推进试探"],
         ),
         "optional_micro_conflicts": _string_list_or_default(
-            draft_card.get("optional_micro_conflicts"),
+            draft_card,
+            "optional_micro_conflicts",
             ["允许加入不改变主线的小阻碍"],
         ),
         "allowed_scene_expansion": _string_list_or_default(
-            draft_card.get("allowed_scene_expansion"),
+            draft_card,
+            "allowed_scene_expansion",
             ["允许扩写动作过程和场景反应，但不得改变硬约束"],
         ),
     }
