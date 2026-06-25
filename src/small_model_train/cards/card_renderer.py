@@ -25,7 +25,11 @@ def formal_card_to_prompt_card(card: dict[str, Any], style_contract: dict[str, A
         "conflict_beat": execution_plan["conflict_beat"],
         "payoff_beat": execution_plan["payoff_beat"],
         "must_include": hard_constraints["must_include"],
-        "must_not_include": hard_constraints["must_not_include"],
+        "must_not_include": (
+            hard_constraints["must_not_include"]
+            + hard_constraints["forbidden_future_facts"]
+            + hard_constraints["style_bans"]
+        ),
         "ending_hook": execution_plan["ending_hook"],
         "target_word_count": execution_plan["target_word_count"],
     }

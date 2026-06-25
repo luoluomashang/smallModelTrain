@@ -124,6 +124,30 @@ def test_render_chapter_execution_input_uses_style_contract_and_formal_sections(
     assert "这一章用于计算来源哈希" not in rendered
 
 
+def test_render_chapter_execution_input_includes_all_formal_negative_constraints():
+    from small_model_train.cards.card_compiler import compile_chapter_execution_card
+    from small_model_train.cards.card_renderer import render_chapter_execution_input
+    from small_model_train.schemas.chapter_execution_card import canonical_card_sha256
+
+    contract = _style_contract()
+    formal_card = compile_chapter_execution_card(
+        draft_card=_draft_card(),
+        chapter=_chapter(),
+        style_contract=contract,
+        group_id="group-c1",
+        split="train",
+    )
+    formal_card["hard_constraints"]["forbidden_future_facts"] = ["不要提前揭露幕后老板"]
+    formal_card["hard_constraints"]["style_bans"] = ["不要使用总结式旁白"]
+    formal_card["card_sha256"] = canonical_card_sha256(formal_card)
+
+    rendered = render_chapter_execution_input(formal_card, contract)
+
+    assert "- 作者说明" in rendered
+    assert "- 不要提前揭露幕后老板" in rendered
+    assert "- 不要使用总结式旁白" in rendered
+
+
 def test_compile_chapter_execution_cards_cli_writes_reviewed_cards(tmp_path):
     from small_model_train.style_contract import write_style_contract_asset
 
