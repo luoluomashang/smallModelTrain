@@ -112,8 +112,10 @@ python scripts/build_chapter_cards.py --chapters data_clean/chapters_split.jsonl
 命令：
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl --dataset-info-output data_sft/dataset_info.json
+python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl --dataset-info-output data_sft/dataset_info.json --allow-draft-cards
 ```
+
+`chapter_cards.jsonl` 仍是 smoke/dev 草稿卡路径，所以这里必须显式使用 `--allow-draft-cards`。formal SFT 需要改用 approved/frozen 的 `ChapterExecutionCard` 文件，并传入 `--style-contract-json`。
 
 输出：
 

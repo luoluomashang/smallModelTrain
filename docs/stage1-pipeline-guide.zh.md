@@ -161,8 +161,10 @@ python scripts/build_style_contract.py --chapters data_clean/chapters_split.json
 接着需要单独准备 `data_cards/chapter_cards.jsonl`。这一步不是脚本自动完成的，因为章节卡决定训练输入质量，必须避免把目标正文直接塞进 prompt。
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl
+python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl --allow-draft-cards
 ```
+
+`chapter_cards.jsonl` 仍是 smoke/dev 草稿卡路径，所以这里必须显式使用 `--allow-draft-cards`。formal SFT 需要改用 approved/frozen 的 `ChapterExecutionCard` 文件，并传入 `--style-contract-json`。
 
 执行后应该出现 `data_sft/sft_chapter_v1.jsonl`，这是第二阶段 QLoRA SFT 训练要使用的数据输入。
 

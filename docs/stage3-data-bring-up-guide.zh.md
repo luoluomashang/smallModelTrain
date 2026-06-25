@@ -60,8 +60,10 @@ Stage 5B 起，这一步生成 StyleContract 三件套：`data_style/style_contr
 ## 6. 构建 SFT 数据集
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl
+python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_v1.jsonl --allow-draft-cards
 ```
+
+`chapter_cards.jsonl` 仍是 smoke/dev 草稿卡路径，所以这里必须显式使用 `--allow-draft-cards`。formal SFT 需要改用 approved/frozen 的 `ChapterExecutionCard` 文件，并传入 `--style-contract-json`。
 
 构建结果应来自章节卡和 `chapters_split.jsonl` 的配对；章节正文是训练目标，章节卡是模型输入。
 
