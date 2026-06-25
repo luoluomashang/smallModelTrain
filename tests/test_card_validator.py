@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 
-def _style_contract() -> dict:
+def _style_contract(approval_status: str = "approved") -> dict:
     from small_model_train.style_contract import build_style_contract_asset
 
     return build_style_contract_asset(
         style_contract_id="contract-v1",
-        approval_status="approved",
+        approval_status=approval_status,
         source_corpus={
             "path": "chapters.jsonl",
             "sha256": "b" * 64,
@@ -25,12 +25,17 @@ def _style_contract() -> dict:
     )
 
 
-def _formal_card(chapter_id: str, text: str = "这一章用于计算来源哈希。", **overrides) -> dict:
+def _formal_card(
+    chapter_id: str,
+    text: str = "这一章用于计算来源哈希。",
+    style_contract: dict | None = None,
+    **overrides,
+) -> dict:
     from small_model_train.schemas.chapter_execution_card import (
         build_chapter_execution_card,
     )
 
-    contract = _style_contract()
+    contract = style_contract or _style_contract()
     card = build_chapter_execution_card(
         card_id=f"card-{chapter_id}-v1",
         chapter_id=chapter_id,
@@ -151,3 +156,63 @@ def test_validate_formal_card_batch_rejects_future_context_leakage():
 
     assert result["passed"] is False
     assert "future-context leakage" in "\n".join(result["errors"])
+
+
+def test_validate_formal_card_batch_rejects_later_train_chapter_leakage():
+    from small_model_train.cards.card_validator import validate_formal_card_batch
+    from small_model_train.schemas.chapter_execution_card import canonical_card_sha256
+
+    leaked_fragment = "第二章才揭开的暗门机关编号"
+    chapters = [
+        {"id": "c1", "text": "这一章用于计算来源哈希。", "split": "train", "quality_tag": "A"},
+        {
+            "id": "c2",
+            "text": f"后续章节才会写到：{leaked_fragment}。",
+            "split": "train",
+            "quality_tag": "A",
+        },
+    ]
+    card = _formal_card("c1")
+    card["hard_constraints"]["must_include"].append(leaked_fragment)
+    card["card_sha256"] = canonical_card_sha256(card)
+    c2_card = _formal_card("c2", text=chapters[1]["text"])
+
+    result = validate_formal_card_batch([card, c2_card], chapters, _style_contract())
+
+    assert result["passed"] is False
+    assert "future-context leakage" in "\n".join(result["errors"])
+
+
+def test_validate_formal_card_batch_rejects_pending_review_style_contract():
+    from small_model_train.cards.card_validator import validate_formal_card_batch
+
+    contract = _style_contract("pending_review")
+    chapters = [{"id": "c1", "text": "这一章用于计算来源哈希。", "split": "train", "quality_tag": "A"}]
+    card = _formal_card("c1", style_contract=contract)
+
+    result = validate_formal_card_batch([card], chapters, contract)
+
+    assert result["passed"] is False
+    assert "style contract" in "\n".join(result["errors"])
+    assert "approved or frozen" in "\n".join(result["errors"])
+
+
+def test_validate_formal_card_batch_rejects_duplicate_card_id_across_chapters():
+    from small_model_train.cards.card_validator import validate_formal_card_batch
+
+    shared_card_id = "card-shared-v1"
+    c1_text = "这一章用于计算来源哈希。"
+    c2_text = "第二章用于计算另一段来源哈希。"
+    chapters = [
+        {"id": "c1", "text": c1_text, "split": "train", "quality_tag": "A"},
+        {"id": "c2", "text": c2_text, "split": "train", "quality_tag": "A"},
+    ]
+    cards = [
+        _formal_card("c1", text=c1_text, card_id=shared_card_id),
+        _formal_card("c2", text=c2_text, card_id=shared_card_id),
+    ]
+
+    result = validate_formal_card_batch(cards, chapters, _style_contract())
+
+    assert result["passed"] is False
+    assert "duplicate formal card id" in "\n".join(result["errors"])

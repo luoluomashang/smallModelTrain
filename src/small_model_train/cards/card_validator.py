@@ -10,7 +10,10 @@ from small_model_train.schemas.chapter_execution_card import (
     text_sha256,
     validate_chapter_execution_card,
 )
-from small_model_train.style_contract import validate_style_contract_asset
+from small_model_train.style_contract import (
+    APPROVED_FORMAL_STATUSES,
+    validate_style_contract_asset,
+)
 from small_model_train.text_utils import count_chinese_chars
 
 
@@ -27,6 +30,7 @@ def validate_formal_card_batch(
 ) -> dict[str, Any]:
     errors: list[str] = []
     card_by_chapter_id: dict[str, dict[str, Any]] = {}
+    card_by_card_id: dict[str, dict[str, Any]] = {}
 
     try:
         contract = validate_style_contract_asset(style_contract)
@@ -36,6 +40,12 @@ def validate_formal_card_batch(
             "errors": [f"style contract invalid: {exc}"],
             "card_by_chapter_id": card_by_chapter_id,
         }
+
+    if contract["approval_status"] not in APPROVED_FORMAL_STATUSES:
+        errors.append(
+            "style contract must be approved or frozen for formal batch: "
+            f"{contract['style_contract_id']} status={contract['approval_status']}"
+        )
 
     chapter_by_id = _chapter_by_id(chapters)
     required_train_chapter_ids = {
@@ -58,27 +68,37 @@ def validate_formal_card_batch(
             continue
 
         chapter_id = card["chapter_id"]
+        card_id = card["card_id"]
         contract_matches = True
         if card["style_contract_id"] != contract["style_contract_id"]:
-            errors.append(f"style_contract_id mismatch: {card['card_id']}")
+            errors.append(f"style_contract_id mismatch: {card_id} chapter {chapter_id}")
             contract_matches = False
         if card["style_contract_sha256"] != contract["contract_sha256"]:
-            errors.append(f"style_contract_sha256 mismatch: {card['card_id']}")
+            errors.append(f"style_contract_sha256 mismatch: {card_id} chapter {chapter_id}")
             contract_matches = False
 
         chapter = chapter_by_id.get(chapter_id)
         if chapter is None:
-            errors.append(f"formal card points to missing chapter: {chapter_id}")
+            errors.append(f"formal card points to missing chapter: {chapter_id} card {card_id}")
             continue
 
         expected_source_hash = text_sha256(str(chapter.get("text") or ""))
         if card["source_chapter_sha256"] != expected_source_hash:
-            errors.append(f"source_chapter_sha256 mismatch: {chapter_id}")
+            errors.append(f"source_chapter_sha256 mismatch: {chapter_id} card {card_id}")
+
+        if card_id in card_by_card_id:
+            previous_card = card_by_card_id[card_id]
+            errors.append(
+                "duplicate formal card id: "
+                f"{card_id} chapters {previous_card['chapter_id']}, {chapter_id}"
+            )
+        else:
+            card_by_card_id[card_id] = card
 
         if chapter_id in card_by_chapter_id:
             errors.append(
                 "duplicate formal cards for chapter "
-                f"{chapter_id}: {card_by_chapter_id[chapter_id]['card_id']}, {card['card_id']}"
+                f"{chapter_id}: {card_by_chapter_id[chapter_id]['card_id']}, {card_id}"
             )
         else:
             card_by_chapter_id[chapter_id] = card
@@ -116,21 +136,29 @@ def _leakage_errors(
 
     target_fragment = _find_leakage_fragment(rendered, str(chapter.get("text") or ""))
     if target_fragment:
-        errors.append(f"target-text leakage: {card['card_id']}: {target_fragment}")
+        errors.append(
+            f"target-text leakage: {card['card_id']} "
+            f"chapter {chapter.get('id')}: {target_fragment}"
+        )
 
     target_chapter_id = chapter.get("id")
-    for other in chapters:
+    target_chapter_index = _chapter_index(chapters, chapter)
+    for other_index, other in enumerate(chapters):
         if not isinstance(other, dict):
             continue
         if other.get("id") == target_chapter_id:
             continue
-        if other.get("split") not in FUTURE_CONTEXT_SPLITS:
+        if (
+            other.get("split") not in FUTURE_CONTEXT_SPLITS
+            and not _is_later_chapter(other_index, target_chapter_index)
+        ):
             continue
         future_fragment = _find_leakage_fragment(rendered, str(other.get("text") or ""))
         if future_fragment:
             errors.append(
                 "future-context leakage: "
-                f"{card['card_id']}: {other.get('id')}: {future_fragment}"
+                f"{card['card_id']} chapter {target_chapter_id}: "
+                f"source chapter {other.get('id')}: {future_fragment}"
             )
 
     return errors
@@ -148,6 +176,17 @@ def _find_leakage_fragment(rendered_input: str, source_text: str) -> str | None:
             if fragment in rendered_input:
                 return fragment
     return None
+
+
+def _chapter_index(chapters: list[dict[str, Any]], chapter: dict[str, Any]) -> int | None:
+    for index, candidate in enumerate(chapters):
+        if candidate is chapter:
+            return index
+    return None
+
+
+def _is_later_chapter(other_index: int, target_chapter_index: int | None) -> bool:
+    return target_chapter_index is not None and other_index > target_chapter_index
 
 
 def _chinese_runs(text: str) -> list[str]:
