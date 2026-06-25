@@ -68,3 +68,55 @@ def test_split_train_eval_script_runs_from_repo_root(tmp_path):
     assert len(split_rows_output) == 5
     assert len(eval_rows) == 2
     assert eval_rows == [row for row in split_rows_output if row["split"] == "eval"]
+
+
+def test_split_grouped_rows_is_deterministic_and_non_overlapping():
+    from small_model_train.dataset_split import split_grouped_rows
+
+    rows = [{"id": f"chapter_{index:04d}", "text": f"正文{index}"} for index in range(12)]
+    first = split_grouped_rows(rows, validation_count=2, sealed_count=3, seed=9)
+    second = split_grouped_rows(rows, validation_count=2, sealed_count=3, seed=9)
+
+    assert first == second
+    validation_ids = {row["id"] for row in first if row["split"] == "validation"}
+    sealed_ids = {row["id"] for row in first if row["split"] == "sealed"}
+    train_ids = {row["id"] for row in first if row["split"] == "train"}
+    assert len(validation_ids) == 2
+    assert len(sealed_ids) == 3
+    assert len(train_ids) == 7
+    assert validation_ids.isdisjoint(sealed_ids)
+    assert validation_ids.isdisjoint(train_ids)
+    assert sealed_ids.isdisjoint(train_ids)
+    assert all(row["group_id"].startswith("group-") for row in first)
+    assert all(len(row["group_sha256"]) == 64 for row in first)
+
+
+def test_split_grouped_rows_rejects_negative_counts():
+    from small_model_train.dataset_split import split_grouped_rows
+
+    with pytest.raises(ValueError, match="validation_count"):
+        split_grouped_rows([{"id": "a", "text": "正文"}], validation_count=-1, sealed_count=0)
+    with pytest.raises(ValueError, match="sealed_count"):
+        split_grouped_rows([{"id": "a", "text": "正文"}], validation_count=0, sealed_count=-1)
+
+
+def test_find_near_duplicate_pairs_flags_high_overlap():
+    from small_model_train.data.dedup import find_near_duplicate_pairs
+
+    rows = [
+        {"id": "train_1", "split": "train", "text": "林默走进旧仓库发现箱子正在响动"},
+        {"id": "sealed_1", "split": "sealed", "text": "林默走进旧仓库发现箱子正在响动"},
+        {"id": "sealed_2", "split": "sealed", "text": "另一条完全不同的章节内容"},
+    ]
+
+    pairs = find_near_duplicate_pairs(rows, threshold=0.8, shingle_size=4)
+
+    assert pairs == [
+        {
+            "left_id": "train_1",
+            "left_split": "train",
+            "right_id": "sealed_1",
+            "right_split": "sealed",
+            "overlap": 1.0,
+        }
+    ]
