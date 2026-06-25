@@ -186,11 +186,11 @@ def is_card_approved_for_formal_sft(card: dict[str, Any]) -> bool:
 
 def read_chapter_execution_cards(path: str | Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    input_path = Path(path)
-    if not input_path.exists():
-        return rows
+    file_path = Path(path)
+    if not file_path.exists():
+        raise ValueError(f"chapter execution cards JSONL not found: {file_path}")
 
-    with input_path.open("r", encoding="utf-8") as handle:
+    with file_path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             stripped = line.strip()
             if not stripped:
@@ -198,11 +198,11 @@ def read_chapter_execution_cards(path: str | Path) -> list[dict[str, Any]]:
             try:
                 row = json.loads(stripped)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"{input_path}:{line_number} is not valid JSON") from exc
+                raise ValueError(f"{file_path}:{line_number} is not valid JSON") from exc
             try:
                 rows.append(validate_chapter_execution_card(row))
             except ValueError as exc:
-                raise ValueError(f"{input_path}:{line_number}: {exc}") from exc
+                raise ValueError(f"{file_path}:{line_number}: {exc}") from exc
     return rows
 
 

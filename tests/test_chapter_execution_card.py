@@ -134,6 +134,23 @@ def test_invalid_status_is_rejected():
         validate_chapter_execution_card(_card(card_status="pending"))
 
 
+@pytest.mark.parametrize("field", ["style_contract_sha256", "source_chapter_sha256", "card_sha256"])
+@pytest.mark.parametrize("invalid_value", ["A" * 64, "g" * 64, "a" * 63])
+def test_sha256_fields_reject_invalid_values(field: str, invalid_value: str):
+    from small_model_train.schemas.chapter_execution_card import (
+        validate_chapter_execution_card,
+    )
+
+    if field == "card_sha256":
+        card = _card()
+        card[field] = invalid_value
+    else:
+        card = _card(**{field: invalid_value})
+
+    with pytest.raises(ValueError, match=field):
+        validate_chapter_execution_card(card)
+
+
 def test_missing_nested_required_field_is_rejected():
     from small_model_train.schemas.chapter_execution_card import (
         canonical_card_sha256,
@@ -158,6 +175,15 @@ def test_hash_mismatch_is_rejected():
 
     with pytest.raises(ValueError, match="card_sha256 mismatch"):
         validate_chapter_execution_card(card)
+
+
+def test_read_chapter_execution_cards_missing_file_is_rejected(tmp_path: Path):
+    from small_model_train.schemas.chapter_execution_card import (
+        read_chapter_execution_cards,
+    )
+
+    with pytest.raises(ValueError, match="chapter execution cards JSONL not found"):
+        read_chapter_execution_cards(tmp_path / "missing.jsonl")
 
 
 def test_read_and_write_chapter_execution_cards_round_trip(tmp_path: Path):
