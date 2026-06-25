@@ -30,6 +30,11 @@ def build_dataset_manifest(
         label="sft_dataset",
         validate_sft_dataset_schema=True,
     )
+    sft_schema = sft_summary.get("schema", {})
+    if not sft_schema.get("valid"):
+        errors = sft_schema.get("errors", [])
+        error_text = "; ".join(str(error) for error in errors) or "unknown error"
+        raise ValueError(f"SFT dataset schema invalid: {error_text}")
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -41,6 +46,7 @@ def build_dataset_manifest(
         ),
         "sft_dataset_path": str(sft_dataset_path),
         "sft_dataset_sha256": sft_summary["sha256"],
+        "sft_dataset_schema": sft_schema,
         "row_count": sft_summary["row_count"],
         "chapters_path": str(chapters_path),
         "chapters_sha256": file_sha256(chapters_path),
