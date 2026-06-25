@@ -695,6 +695,72 @@ def test_build_sft_dataset_cli_rejects_dataset_info_same_as_output(tmp_path):
     assert not output_path.exists()
 
 
+def test_build_sft_dataset_cli_rejects_dataset_manifest_same_as_output(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "sft_chapter_v1.jsonl"
+    write_jsonl(cards_path, [_sft_card()])
+    write_jsonl(chapters_path, [_train_chapter()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--dataset-manifest-output",
+            str(output_path),
+            "--allow-draft-cards",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "output path collision" in result.stderr
+    assert not output_path.exists()
+
+
+def test_build_sft_dataset_cli_rejects_dataset_manifest_same_as_dataset_info(tmp_path):
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    output_path = tmp_path / "sft_chapter_v1.jsonl"
+    sidecar_path = tmp_path / "dataset_sidecar.json"
+    write_jsonl(cards_path, [_sft_card()])
+    write_jsonl(chapters_path, [_train_chapter()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--dataset-info-output",
+            str(sidecar_path),
+            "--dataset-manifest-output",
+            str(sidecar_path),
+            "--allow-draft-cards",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "output path collision" in result.stderr
+    assert not output_path.exists()
+    assert not sidecar_path.exists()
+
+
 def _style_contract_asset(
     status: str = "approved",
     source_sha256: str = "b" * 64,
@@ -1014,3 +1080,87 @@ def test_build_sft_dataset_cli_rejects_chapters_hash_mismatch(tmp_path):
     )
     assert "Traceback" not in result.stderr
     assert not output_path.exists()
+
+
+def test_build_sft_dataset_cli_allow_draft_with_style_contract_uses_legacy_cards(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
+    from small_model_train.style_contract import write_style_contract_asset
+
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    implicit_manifest_path = tmp_path / "dataset_manifest.json"
+    write_jsonl(cards_path, [_approved_sft_card(draft_only=True, approval_status="draft")])
+    write_jsonl(chapters_path, [_train_chapter()])
+    contract = _style_contract_asset(
+        "approved",
+        source_sha256=file_sha256(chapters_path),
+    )
+    write_style_contract_asset(contract_path, contract)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--allow-draft-cards",
+            "--style-contract-json",
+            str(contract_path),
+        ],
+        check=True,
+    )
+
+    rows = read_jsonl(output_path)
+    assert len(rows) == 1
+    assert rows[0]["output"] == "正文"
+    assert not implicit_manifest_path.exists()
+
+
+def test_build_sft_dataset_cli_rejects_manifest_in_draft_mode(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
+    from small_model_train.style_contract import write_style_contract_asset
+
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    manifest_path = tmp_path / "dataset_manifest.json"
+    write_jsonl(cards_path, [_approved_sft_card(draft_only=True, approval_status="draft")])
+    write_jsonl(chapters_path, [_train_chapter()])
+    contract = _style_contract_asset(
+        "approved",
+        source_sha256=file_sha256(chapters_path),
+    )
+    write_style_contract_asset(contract_path, contract)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--allow-draft-cards",
+            "--style-contract-json",
+            str(contract_path),
+            "--dataset-manifest-output",
+            str(manifest_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "dataset manifest requires formal SFT mode" in result.stderr
+    assert not output_path.exists()
+    assert not manifest_path.exists()

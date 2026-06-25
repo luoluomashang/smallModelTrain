@@ -61,6 +61,26 @@ def _chapter_hashes(chapters: list[dict]) -> dict[str, str]:
     }
 
 
+def _reject_output_path_collisions(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    output_paths = (
+        ("--output", args.output),
+        ("--dataset-info-output", args.dataset_info_output),
+        ("--dataset-manifest-output", args.dataset_manifest_output),
+    )
+    seen: dict[Path, str] = {}
+    for option, raw_path in output_paths:
+        if not raw_path:
+            continue
+        path = Path(raw_path).resolve()
+        previous_option = seen.get(path)
+        if previous_option is not None:
+            parser.error(
+                "output path collision: "
+                f"{option} must not be the same path as {previous_option}"
+            )
+        seen[path] = option
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cards", required=True)
@@ -72,8 +92,9 @@ def main() -> None:
     parser.add_argument("--allow-draft-cards", action="store_true")
     args = parser.parse_args()
 
-    if args.dataset_info_output and Path(args.output).resolve() == Path(args.dataset_info_output).resolve():
-        parser.error("--dataset-info-output must not be the same path as --output")
+    _reject_output_path_collisions(parser, args)
+    if args.allow_draft_cards and args.dataset_manifest_output:
+        parser.error("dataset manifest requires formal SFT mode; remove --allow-draft-cards")
 
     try:
         cards = read_jsonl(args.cards)
@@ -88,15 +109,17 @@ def main() -> None:
                     "chapters sha256 does not match style contract "
                     "source_corpus.sha256"
                 )
-            rows = build_formal_sft_rows(cards, chapters, style_contract)
-        elif args.allow_draft_cards:
+
+        if args.allow_draft_cards:
             rows = build_sft_rows(
                 cards,
                 chapters,
                 require_approved_cards=False,
                 style_contract=None,
             )
-        elif not args.allow_draft_cards:
+        elif style_contract is not None:
+            rows = build_formal_sft_rows(cards, chapters, style_contract)
+        else:
             raise ValueError("style contract JSON is required for formal SFT")
 
         write_jsonl(args.output, rows)
