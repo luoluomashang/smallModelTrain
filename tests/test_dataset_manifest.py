@@ -92,9 +92,86 @@ def test_build_dataset_manifest_rejects_invalid_sft_schema(tmp_path: Path):
         )
 
 
-def _style_contract_asset(chapters_path: Path) -> dict:
+def test_build_dataset_manifest_rejects_invalid_style_contract_file(tmp_path: Path):
+    from small_model_train.data.dataset_manifest import build_dataset_manifest
+
+    sft_path = tmp_path / "sft.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    cards_path = tmp_path / "cards.jsonl"
+    style_path = tmp_path / "style.json"
+
+    write_jsonl(sft_path, [{"instruction": "i", "input": "x", "output": "y"}])
+    write_jsonl(chapters_path, [{"id": "c1", "text": "正文", "split": "train"}])
+    write_jsonl(
+        cards_path,
+        [{"card_id": "card-c1-v1", "chapter_id": "c1", "card_sha256": "a" * 64}],
+    )
+    style_contract = _style_contract_asset(chapters_path)
+    style_path.write_text(
+        json.dumps({"style_contract_id": "contract-v1"}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="StyleContract"):
+        build_dataset_manifest(
+            sft_dataset_path=sft_path,
+            chapters_path=chapters_path,
+            cards_path=cards_path,
+            style_contract_path=style_path,
+            style_contract=style_contract,
+            split_manifest={"counts": {"train": 1}},
+            card_hashes={"card-c1-v1": "a" * 64},
+            chapter_hashes={"c1": "c" * 64},
+            leakage_report={"passed": True, "errors": []},
+            near_duplicate_report=[],
+            formal_dataset=True,
+        )
+
+
+def test_build_dataset_manifest_rejects_style_contract_provenance_mismatch(tmp_path: Path):
+    from small_model_train.data.dataset_manifest import build_dataset_manifest
+
+    sft_path = tmp_path / "sft.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    cards_path = tmp_path / "cards.jsonl"
+    style_path = tmp_path / "style.json"
+
+    write_jsonl(sft_path, [{"instruction": "i", "input": "x", "output": "y"}])
+    write_jsonl(chapters_path, [{"id": "c1", "text": "正文", "split": "train"}])
+    write_jsonl(
+        cards_path,
+        [{"card_id": "card-c1-v1", "chapter_id": "c1", "card_sha256": "a" * 64}],
+    )
+    file_style_contract = _style_contract_asset(chapters_path)
+    provided_style_contract = _style_contract_asset(
+        chapters_path,
+        style_contract_id="contract-v2",
+    )
+    write_style_contract_asset(style_path, file_style_contract)
+
+    with pytest.raises(ValueError, match="StyleContract.*mismatch"):
+        build_dataset_manifest(
+            sft_dataset_path=sft_path,
+            chapters_path=chapters_path,
+            cards_path=cards_path,
+            style_contract_path=style_path,
+            style_contract=provided_style_contract,
+            split_manifest={"counts": {"train": 1}},
+            card_hashes={"card-c1-v1": "a" * 64},
+            chapter_hashes={"c1": "c" * 64},
+            leakage_report={"passed": True, "errors": []},
+            near_duplicate_report=[],
+            formal_dataset=True,
+        )
+
+
+def _style_contract_asset(
+    chapters_path: Path,
+    *,
+    style_contract_id: str = "contract-v1",
+) -> dict:
     return build_style_contract_asset(
-        style_contract_id="contract-v1",
+        style_contract_id=style_contract_id,
         approval_status="approved",
         source_corpus={
             "path": str(chapters_path),

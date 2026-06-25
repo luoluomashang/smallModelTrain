@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from small_model_train.artifact_manifest import file_sha256, summarize_jsonl_artifact
+from small_model_train.style_contract import read_style_contract_asset, validate_style_contract_asset
 
 
 SCHEMA_VERSION = 1
@@ -36,6 +37,23 @@ def build_dataset_manifest(
         error_text = "; ".join(str(error) for error in errors) or "unknown error"
         raise ValueError(f"SFT dataset schema invalid: {error_text}")
 
+    try:
+        file_style_contract = read_style_contract_asset(style_contract_path)
+    except ValueError as exc:
+        raise ValueError(f"StyleContract file invalid: {exc}") from exc
+
+    try:
+        provided_style_contract = validate_style_contract_asset(style_contract)
+    except ValueError as exc:
+        raise ValueError(f"StyleContract object invalid: {exc}") from exc
+
+    for field in ("style_contract_id", "contract_sha256"):
+        if provided_style_contract[field] != file_style_contract[field]:
+            raise ValueError(
+                "StyleContract provenance mismatch: "
+                f"provided {field} does not match style_contract_path"
+            )
+
     return {
         "schema_version": SCHEMA_VERSION,
         "created_at": (
@@ -54,8 +72,8 @@ def build_dataset_manifest(
         "cards_sha256": file_sha256(cards_path),
         "style_contract_path": str(style_contract_path),
         "style_contract_file_sha256": file_sha256(style_contract_path),
-        "style_contract_id": style_contract["style_contract_id"],
-        "style_contract_sha256": style_contract["contract_sha256"],
+        "style_contract_id": file_style_contract["style_contract_id"],
+        "style_contract_sha256": file_style_contract["contract_sha256"],
         "split_manifest": split_manifest,
         "card_hashes": card_hashes,
         "chapter_hashes": chapter_hashes,
