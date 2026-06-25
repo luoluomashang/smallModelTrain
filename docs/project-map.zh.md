@@ -23,8 +23,11 @@
 - `data_clean/chapters.jsonl`：清洗和长度过滤后的章节。
 - `data_clean/chapters_split.jsonl`：标记 train/eval 划分后的章节。
 - `data_cards/`：章节卡、评测卡、执行卡、质量子集。
+- `data_cards/chapter_execution_cards_reviewed.jsonl`：Stage 5C 编译出的 reviewed 正式卡候选。
+- `data_cards/chapter_execution_cards_approved.jsonl`：人工批准或冻结后可进入 formal SFT 的正式卡。
 - `data_style/`：Stage 5B 生成的 StyleContract JSON 和 style metrics。默认包括 `style_contract_author_main_v1.json` 和 `style_metrics_author_main_v1.json`。
 - `data_sft/`：训练数据和 LLaMA-Factory 数据集元信息。
+- `data_sft/*_manifest.json`：formal SFT dataset manifest，记录 dataset、card、chapter、split 和 StyleContract hash。
 
 ## 配置、输出、报告和日志
 

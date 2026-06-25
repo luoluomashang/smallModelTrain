@@ -11,7 +11,10 @@ data_raw/novels/
   -> data_clean/chapters_split.jsonl + data_cards/eval_cards_50.jsonl
   -> data_style/style_contract_author_main_v1.json + style_contract.md + data_style/style_metrics_author_main_v1.json
   -> data_cards/chapter_cards.jsonl
+  -> data_cards/chapter_execution_cards_reviewed.jsonl
+  -> data_cards/chapter_execution_cards_approved.jsonl
   -> data_sft/sft_chapter_v1.jsonl
+  -> data_sft/sft_chapter_formal.jsonl + data_sft/sft_chapter_formal_manifest.json
   -> data_cards/eval_execution_cards_50.jsonl
   -> reports/stage3_data_readiness_report.md
   -> outputs/sft_smoke/
@@ -102,6 +105,18 @@ python scripts/build_chapter_cards.py --chapters data_clean/chapters_split.jsonl
 
 成功标志：章节卡字段完整，没有直接塞入完整原文。
 
+### Stage 5C 前置：正式章节执行卡
+
+Stage 5C 起，formal SFT 不再直接使用 `chapter_cards.jsonl`。`chapter_cards.jsonl` 仍是 draft/smoke/dev 输入；正式路径要先编译 reviewed `ChapterExecutionCard` 候选：
+
+```powershell
+python scripts/compile_chapter_execution_cards.py --cards data_cards/chapter_cards.jsonl --chapters data_clean/chapters_split.jsonl --style-contract-json data_style/style_contract_author_main_v1.json --output data_cards/chapter_execution_cards_reviewed.jsonl
+```
+
+输出：`data_cards/chapter_execution_cards_reviewed.jsonl`
+
+成功标志：每张候选卡绑定 StyleContract id/hash、source chapter hash 和 `card_sha256`，状态为 `reviewed`。reviewed 卡不能直接进入 formal SFT；人工审阅通过后，需要把卡批准或冻结，重新计算 `card_sha256`，并保存为 `data_cards/chapter_execution_cards_approved.jsonl`。
+
 ## 6. 构建 SFT 数据
 
 输入：
@@ -123,6 +138,14 @@ python scripts/build_sft_dataset.py --cards data_cards/chapter_cards.jsonl --cha
 - `data_sft/dataset_info.json`
 
 成功标志：SFT 数据可以被训练脚本引用。
+
+formal SFT 构建数据时使用 approved/frozen 的正式卡，并写出 dataset manifest：
+
+```powershell
+python scripts/build_sft_dataset.py --cards data_cards/chapter_execution_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json --dataset-manifest-output data_sft/sft_chapter_formal_manifest.json
+```
+
+formal 成功标志：每个 train/A 章节恰好有一张 approved/frozen 正式卡，卡的 StyleContract id/hash 与 JSON 一致，source chapter hash 与章节正文一致，泄漏检查通过，并且 `data_sft/sft_chapter_formal_manifest.json` 记录 dataset、card、chapter、split 和 StyleContract hash provenance。
 
 ### Stage 4 前置：准备执行卡
 
@@ -282,3 +305,4 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - Stage 4.1：长生成质量、预算和审阅门槛。
 - Stage 5A：证据链修正，要求 preflight JSON、raw-first eval、raw scoring、manifest 和 draft/formal 卡门禁可追踪。
 - Stage 5B：StyleContract 闭环，formal SFT 必须绑定 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，`style_contract.md` 只用于人工审阅。
+- Stage 5C：正式 `ChapterExecutionCard` 和数据完整性闭环，formal SFT 使用 approved/frozen 卡并写出 dataset manifest。

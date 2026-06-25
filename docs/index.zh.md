@@ -24,7 +24,8 @@
 4. [Stage 4.1 Quality Eval Hardening 指南](stage4-1-quality-eval-guide.zh.md)
 5. [Stage 5A 证据链修正操作指南](stage5a-evidence-chain-hardening.zh.md)
 6. [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)
-7. [Stage 4 决策日志](stage4-decision-log.zh.md)
+7. [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)
+8. [Stage 4 决策日志](stage4-decision-log.zh.md)
 
 这条路线适合已经会用 PowerShell、Python，并且只想按步骤复跑数据准备、训练检查、评测和报告的人。
 
@@ -48,6 +49,7 @@
 - [Stage 4.1 Quality Eval Hardening 指南](stage4-1-quality-eval-guide.zh.md)：解释长生成质量评测、质量子集、预算报告和审阅门槛。
 - [Stage 5A 证据链修正操作指南](stage5a-evidence-chain-hardening.zh.md)：解释 preflight JSON、draft card 显式豁免、raw-first eval、rule projection 和 run manifest 证据链。
 - [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)：解释 StyleContract JSON、Markdown、metrics、approval status 和 formal SFT 绑定。
+- [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)：解释 ChapterExecutionCard、正式卡审批、数据 split、泄漏检查和 dataset manifest。
 - [Stage 4 决策日志](stage4-decision-log.zh.md)：记录当前是否允许扩大训练规模，以及原因。
 - [Stage 4.1 Full50 归档](stage4-1-full50-archive.zh.md)：归档 full50 运行证据。
 - [Stage 4.1 Full50 Manual Review Findings](stage4-1-full50-manual-review.zh.md)：记录人工复核发现。
