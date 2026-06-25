@@ -8,7 +8,12 @@ import pytest
 
 from small_model_train.io_utils import read_jsonl, write_jsonl
 from small_model_train.prompt_renderer import SYSTEM_PROMPT
-from small_model_train.sft_builder import INSTRUCTION, build_sft_rows, render_sft_input
+from small_model_train.sft_builder import (
+    INSTRUCTION,
+    build_formal_sft_rows,
+    build_sft_rows,
+    render_sft_input,
+)
 
 VALID_STYLE_HASH = "a" * 64
 
@@ -44,6 +49,82 @@ def _approved_sft_card(card_id: str = "c1", **overrides) -> dict:
 
 def _train_chapter(chapter_id: str = "c1") -> dict:
     return {"id": chapter_id, "text": "正文", "split": "train", "quality_tag": "A"}
+
+
+def _formal_style_contract_for_stage5c(source_sha256: str = "b" * 64) -> dict:
+    from small_model_train.style_contract import build_style_contract_asset
+
+    return build_style_contract_asset(
+        style_contract_id="contract-v1",
+        approval_status="approved",
+        source_corpus={
+            "path": "chapters.jsonl",
+            "sha256": source_sha256,
+            "quality_filter": "quality_tag=A",
+            "row_count": 1,
+            "selected_rows": 1,
+            "split_summary": {"train": 1},
+        },
+        profile_metrics={
+            "chapter_count": 1,
+            "avg_dialogue_ratio": 0.1,
+            "avg_paragraph_chars": 20,
+            "ai_taste": {"phrase_hits": {}, "total_hits": 0, "hits_per_10k_chars": 0},
+        },
+    )
+
+
+def _formal_card_for_stage5c(
+    chapter_id: str = "c1",
+    text: str = "这一章用于计算来源哈希。",
+) -> dict:
+    from small_model_train.schemas.chapter_execution_card import build_chapter_execution_card
+
+    contract = _formal_style_contract_for_stage5c()
+    return build_chapter_execution_card(
+        card_id=f"card-{chapter_id}-v1",
+        chapter_id=chapter_id,
+        card_status="approved",
+        style_contract_id=contract["style_contract_id"],
+        style_contract_sha256=contract["contract_sha256"],
+        source_chapter_text=text,
+        target_platform="local",
+        genre_tags=["都市"],
+        hard_constraints={
+            "must_include": ["合同证据"],
+            "must_not_include": ["作者说明"],
+            "continuity_facts": ["林默刚拿到关键证据。"],
+            "forbidden_future_facts": ["不要提前揭露幕后买家。"],
+            "style_bans": ["不要使用AI味套话。"],
+        },
+        execution_plan={
+            "chapter_goal": "林默用证据稳住局面。",
+            "conflict_beat": "岳家当众施压，逼他交出合同。",
+            "payoff_beat": "林默亮出备份，让对方第一次失声。",
+            "chapter_structure": [
+                {"step": 1, "name": "压迫", "goal": "把林默逼到台前。", "estimated_chars": "300-400"}
+            ],
+            "character_states": [{"name": "林默", "state": "冷静", "speech_style": "短句"}],
+            "ending_hook": "门外响起真正买家的声音。",
+            "target_word_count": "2000-2500中文汉字",
+        },
+        creative_space={
+            "optional_sensory_details": ["酒杯轻响"],
+            "optional_dialogue_moves": ["短句反问"],
+            "optional_micro_conflicts": ["旁观者低声议论"],
+            "allowed_scene_expansion": ["补足宴会厅动线"],
+        },
+        provenance={
+            "source_card_id": "",
+            "compiler_version": "test",
+            "created_at": "2026-01-01T00:00:00Z",
+            "reviewer": "qa",
+            "reviewed_at": "2026-01-01T00:00:00Z",
+            "review_notes": "",
+            "group_id": "g1",
+            "split": "train",
+        },
+    )
 
 
 def test_sft_instruction_reuses_system_prompt():
@@ -269,6 +350,33 @@ def test_build_sft_rows_only_uses_train_a_chapters():
     assert [row["output"] for row in rows] == ["训练正文"]
 
 
+def test_build_formal_sft_rows_requires_one_formal_card_per_train_chapter():
+    chapter_text = "这一章用于计算来源哈希。"
+    chapters = [{**_train_chapter(), "text": chapter_text}]
+    contract = _formal_style_contract_for_stage5c()
+    card = _formal_card_for_stage5c(text=chapter_text)
+
+    rows = build_formal_sft_rows([card], chapters, contract)
+
+    assert rows == [
+        {
+            "instruction": INSTRUCTION,
+            "input": rows[0]["input"],
+            "output": chapter_text,
+        }
+    ]
+    assert "【创作自由】" in rows[0]["input"]
+
+
+def test_build_formal_sft_rows_rejects_missing_card():
+    chapter_text = "这一章用于计算来源哈希。"
+    chapters = [{**_train_chapter(), "text": chapter_text}]
+    contract = _formal_style_contract_for_stage5c()
+
+    with pytest.raises(ValueError, match="missing formal card for train chapter: c1"):
+        build_formal_sft_rows([], chapters, contract)
+
+
 def test_build_sft_rows_skips_unmatched_card_id():
     cards = [
         {
@@ -383,7 +491,10 @@ def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_fl
     contract_path = tmp_path / "style_contract.json"
     output_path = tmp_path / "sft.jsonl"
     allowed_output_path = tmp_path / "sft_allowed.jsonl"
-    write_jsonl(cards_path, [_approved_sft_card(draft_only=True, approval_status="draft")])
+    write_jsonl(
+        cards_path,
+        [_approved_sft_card(draft_only=True, approval_status="draft", schema_version=1)],
+    )
     write_jsonl(chapters_path, [_train_chapter()])
     contract = _style_contract_asset(
         "approved",
@@ -410,7 +521,7 @@ def test_build_sft_dataset_cli_rejects_draft_cards_by_default_and_allows_with_fl
     )
 
     assert result.returncode != 0
-    assert "draft card cannot enter formal SFT: c1" in result.stderr
+    assert "card_id is required" in result.stderr
     assert not output_path.exists()
 
     subprocess.run(
@@ -770,23 +881,77 @@ def test_build_sft_dataset_cli_rejects_missing_style_contract_json_path(tmp_path
     assert not output_path.exists()
 
 
-def test_build_sft_dataset_cli_accepts_matching_approved_contract(tmp_path):
+def test_build_sft_dataset_cli_formal_cards_write_manifest(tmp_path):
     from small_model_train.artifact_manifest import file_sha256
+    from small_model_train.schemas.chapter_execution_card import canonical_card_sha256, text_sha256
     from small_model_train.style_contract import write_style_contract_asset
 
     cards_path = tmp_path / "cards.jsonl"
     chapters_path = tmp_path / "chapters.jsonl"
     contract_path = tmp_path / "style_contract.json"
     output_path = tmp_path / "sft.jsonl"
-    write_jsonl(chapters_path, [_train_chapter()])
+    manifest_path = tmp_path / "dataset_manifest.json"
+    chapter_text = "这一章用于计算来源哈希。"
+    chapters = [{**_train_chapter(), "text": chapter_text}]
+    write_jsonl(chapters_path, chapters)
+    contract = _formal_style_contract_for_stage5c(
+        source_sha256=file_sha256(chapters_path),
+    )
+    card = _formal_card_for_stage5c(text=chapter_text)
+    card["style_contract_sha256"] = contract["contract_sha256"]
+    card["card_sha256"] = canonical_card_sha256(card)
+    write_jsonl(cards_path, [card])
+    write_style_contract_asset(contract_path, contract)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sft_dataset.py",
+            "--cards",
+            str(cards_path),
+            "--chapters",
+            str(chapters_path),
+            "--output",
+            str(output_path),
+            "--style-contract-json",
+            str(contract_path),
+            "--dataset-manifest-output",
+            str(manifest_path),
+        ],
+        check=True,
+    )
+
+    rows = read_jsonl(output_path)
+    assert rows[0]["output"] == chapter_text
+    assert "【创作自由】" in rows[0]["input"]
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["formal_dataset"] is True
+    assert manifest["row_count"] == 1
+    assert manifest["style_contract_sha256"] == contract["contract_sha256"]
+    assert manifest["split_manifest"]["counts"] == {"train": 1}
+    assert manifest["card_hashes"] == {card["card_id"]: card["card_sha256"]}
+    assert manifest["chapter_hashes"] == {"c1": text_sha256(chapter_text)}
+
+
+def test_build_sft_dataset_cli_accepts_matching_approved_contract(tmp_path):
+    from small_model_train.artifact_manifest import file_sha256
+    from small_model_train.schemas.chapter_execution_card import canonical_card_sha256
+    from small_model_train.style_contract import write_style_contract_asset
+
+    cards_path = tmp_path / "cards.jsonl"
+    chapters_path = tmp_path / "chapters.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "sft.jsonl"
+    chapter = _train_chapter()
+    write_jsonl(chapters_path, [chapter])
     contract = _style_contract_asset(
         "approved",
         source_sha256=file_sha256(chapters_path),
     )
-    card = _approved_sft_card(
-        style_contract_id=contract["style_contract_id"],
-        style_contract_sha256=contract["contract_sha256"],
-    )
+    card = _formal_card_for_stage5c(text=chapter["text"])
+    card["style_contract_sha256"] = contract["contract_sha256"]
+    card["card_sha256"] = canonical_card_sha256(card)
     write_jsonl(cards_path, [card])
     write_style_contract_asset(contract_path, contract)
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from small_model_train.cards.card_renderer import render_chapter_execution_input
+from small_model_train.cards.card_validator import validate_formal_card_batch
 from small_model_train.prompt_renderer import SYSTEM_PROMPT, render_execution_input
 from small_model_train.style_contract import is_contract_approved_for_formal_sft, validate_style_contract_asset
 
@@ -114,4 +116,38 @@ def build_sft_rows(
         )
     if require_approved_cards and style_contract is None:
         raise ValueError("style contract JSON is required for formal SFT")
+    return rows
+
+
+def build_formal_sft_rows(
+    cards: list[dict],
+    chapters: list[dict],
+    style_contract: dict[str, Any],
+    *,
+    require_all_train_chapters: bool = True,
+) -> list[dict[str, str]]:
+    report = validate_formal_card_batch(
+        cards,
+        chapters,
+        style_contract,
+        require_all_train_chapters=require_all_train_chapters,
+    )
+    if not report["passed"]:
+        raise ValueError("\n".join(report["errors"]))
+
+    card_by_chapter_id = report["card_by_chapter_id"]
+    rows: list[dict[str, str]] = []
+    for chapter in chapters:
+        if not _is_trainable_chapter(chapter):
+            continue
+        card = card_by_chapter_id.get(str(chapter.get("id")))
+        if card is None:
+            continue
+        rows.append(
+            {
+                "instruction": INSTRUCTION,
+                "input": render_chapter_execution_input(card, style_contract),
+                "output": str(chapter.get("text", "")),
+            }
+        )
     return rows
