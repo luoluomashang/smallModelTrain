@@ -35,23 +35,29 @@ def split_grouped_rows(
     if sealed_count < 0:
         raise ValueError("sealed_count must be >= 0")
 
-    ranked = sorted(
-        enumerate(rows),
-        key=lambda item: _split_rank(item[1], seed, item[0]),
-    )
-    validation_indexes = {index for index, _row in ranked[:validation_count]}
-    sealed_indexes = {
-        index
-        for index, _row in ranked[validation_count : validation_count + sealed_count]
+    group_source_hashes: dict[str, list[str]] = {}
+    for row in rows:
+        group_key = _group_key(row)
+        group_source_hashes.setdefault(group_key, []).append(_source_text_sha256(row))
+
+    group_shas = {
+        group_key: _group_sha256(seed, group_key, source_hashes)
+        for group_key, source_hashes in group_source_hashes.items()
     }
+    ranked_group_keys = sorted(group_shas, key=lambda group_key: group_shas[group_key])
+    validation_group_keys = set(ranked_group_keys[:validation_count])
+    sealed_group_keys = set(
+        ranked_group_keys[validation_count : validation_count + sealed_count]
+    )
 
     output: list[dict] = []
-    for index, row in enumerate(rows):
+    for row in rows:
         updated = dict(row)
-        group_sha = _group_sha256(row, seed, index)
-        if index in validation_indexes:
+        group_key = _group_key(row)
+        group_sha = group_shas[group_key]
+        if group_key in validation_group_keys:
             split = "validation"
-        elif index in sealed_indexes:
+        elif group_key in sealed_group_keys:
             split = "sealed"
         else:
             split = "train"
@@ -62,16 +68,20 @@ def split_grouped_rows(
     return output
 
 
-def _split_rank(row: dict, seed: int, index: int) -> str:
-    return _group_sha256(row, seed, index)
+def _group_key(row: dict) -> str:
+    row_id = row.get("id")
+    if row_id is not None and str(row_id).strip():
+        return f"id:{row_id}"
+    return f"text:{_source_text_sha256(row)}"
 
 
-def _group_sha256(row: dict, seed: int, index: int) -> str:
-    row_id = row.get("id", index)
-    if row_id is None:
-        row_id = index
+def _source_text_sha256(row: dict) -> str:
     text = row.get("text", "")
     if text is None:
         text = ""
-    payload = f"{seed}\n{index}\n{row_id}\n{text}"
+    return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
+
+
+def _group_sha256(seed: int, group_key: str, source_hashes: list[str]) -> str:
+    payload = "\n".join([str(seed), group_key, *sorted(source_hashes)])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

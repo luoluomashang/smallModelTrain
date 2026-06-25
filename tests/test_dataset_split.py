@@ -91,6 +91,41 @@ def test_split_grouped_rows_is_deterministic_and_non_overlapping():
     assert all(len(row["group_sha256"]) == 64 for row in first)
 
 
+def test_split_grouped_rows_preserves_group_metadata_when_rows_are_reordered():
+    from small_model_train.dataset_split import split_grouped_rows
+
+    rows = [{"id": f"chapter_{index:04d}", "text": f"正文{index}"} for index in range(8)]
+    ordered = split_grouped_rows(rows, validation_count=2, sealed_count=2, seed=17)
+    reordered = split_grouped_rows(list(reversed(rows)), validation_count=2, sealed_count=2, seed=17)
+
+    ordered_by_id = {
+        row["id"]: (row["split"], row["group_id"], row["group_sha256"]) for row in ordered
+    }
+    reordered_by_id = {
+        row["id"]: (row["split"], row["group_id"], row["group_sha256"]) for row in reordered
+    }
+    assert reordered_by_id == ordered_by_id
+
+
+def test_split_grouped_rows_keeps_duplicate_chapter_ids_in_one_group():
+    from small_model_train.dataset_split import split_grouped_rows
+
+    rows = [
+        {"id": "chapter_shared", "text": "第一段正文"},
+        {"id": "chapter_a", "text": "独立章节甲"},
+        {"id": "chapter_shared", "text": "第二段正文"},
+        {"id": "chapter_b", "text": "独立章节乙"},
+        {"id": "chapter_shared", "text": "第三段正文"},
+    ]
+
+    split = split_grouped_rows(rows, validation_count=1, sealed_count=1, seed=23)
+    shared_rows = [row for row in split if row["id"] == "chapter_shared"]
+
+    assert len({row["split"] for row in shared_rows}) == 1
+    assert len({row["group_id"] for row in shared_rows}) == 1
+    assert len({row["group_sha256"] for row in shared_rows}) == 1
+
+
 def test_split_grouped_rows_rejects_negative_counts():
     from small_model_train.dataset_split import split_grouped_rows
 
