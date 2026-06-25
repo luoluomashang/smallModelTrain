@@ -27,7 +27,7 @@
 - `data_cards/chapter_execution_cards_approved.jsonl`：人工批准或冻结后可进入 formal SFT 的正式卡。
 - `data_style/`：Stage 5B 生成的 StyleContract JSON 和 style metrics。默认包括 `style_contract_author_main_v1.json` 和 `style_metrics_author_main_v1.json`。
 - `data_sft/`：训练数据和 LLaMA-Factory 数据集元信息。
-- `data_sft/*_manifest.json`：formal SFT dataset manifest，记录 dataset、card、chapter、split 和 StyleContract hash。
+- `data_sft/*_manifest.json`：formal SFT dataset manifest，汇总记录 dataset/file hashes、split counts、card hashes、chapter hashes 和 StyleContract hash。
 
 ## 配置、输出、报告和日志
 

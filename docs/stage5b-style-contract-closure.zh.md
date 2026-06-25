@@ -34,10 +34,10 @@ python scripts/build_style_contract.py --chapters data_clean/chapters_split.json
 formal SFT 必须显式传入 `approved` 或 `frozen` 的 StyleContract JSON：
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json
+python scripts/build_sft_dataset.py --cards data_cards/chapter_execution_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json --dataset-manifest-output data_sft/sft_chapter_formal_manifest.json
 ```
 
-如果 contract 仍是 `pending_review`，命令应失败。卡里的 `style_contract_id` 必须与 StyleContract JSON 的 id 一致，卡里的 `style_contract_sha256` 必须等于 StyleContract JSON 里的 `contract_sha256`。
+如果 contract 仍是 `pending_review`，命令应失败。Stage 5C 起，formal SFT 的 canonical 卡输入是 `data_cards/chapter_execution_cards_approved.jsonl`；每张 `ChapterExecutionCard` 的 `card_status` 必须为 `approved` 或 `frozen`，卡里的 `style_contract_id` 必须与 StyleContract JSON 的 id 一致，卡里的 `style_contract_sha256` 必须等于 StyleContract JSON 里的 `contract_sha256`。
 
 正式训练同样要显式绑定同一个 StyleContract JSON：
 
@@ -54,6 +54,7 @@ python scripts/run_sft_train.py --config configs/sft_qlora_qwen3_4b.yaml --sft-d
 - SFT dataset 路径、sha256、行数。
 - eval cards 路径、sha256、schema 校验结果。
 - StyleContract 路径、id、hash、approval status。
+- formal SFT dataset manifest 路径、sha256 和是否已写出。
 - `formal_evidence` 是否为真实 formal 证据。
 
 dry-run 可以验证命令构造，但不会产生 formal evidence。

@@ -71,6 +71,8 @@ python scripts/split_train_eval.py --input data_clean/chapters.jsonl --output da
 
 成功标志：当输入章节数量不少于 `--eval-count` 时，评测集数量符合 `--eval-count`；小语料可能少于这个数量。训练数据仍然保留在 split 文件里。
 
+注意：`split_train_eval.py` 仍创建 legacy train/eval smoke split。Stage 5C 讨论的 validation/sealed 边界来自 grouped split 元数据和 formal card/data contract，不是这个旧 CLI 的默认输出。
+
 ## 4. 生成风格契约
 
 输入：`data_clean/chapters_split.jsonl`
@@ -115,7 +117,7 @@ python scripts/compile_chapter_execution_cards.py --cards data_cards/chapter_car
 
 输出：`data_cards/chapter_execution_cards_reviewed.jsonl`
 
-成功标志：每张候选卡绑定 StyleContract id/hash、source chapter hash 和 `card_sha256`，状态为 `reviewed`。reviewed 卡不能直接进入 formal SFT；人工审阅通过后，需要把卡批准或冻结，重新计算 `card_sha256`，并保存为 `data_cards/chapter_execution_cards_approved.jsonl`。
+成功标志：每张候选卡绑定 StyleContract id/hash、source chapter hash 和 `card_sha256`，`card_status` 为 `reviewed`。reviewed 卡不能直接进入 formal SFT；人工审阅通过后，需要把正式卡的 `card_status` 改为 `approved` 或 `frozen`，重新计算 `card_sha256`，并保存为 `data_cards/chapter_execution_cards_approved.jsonl`。
 
 ## 6. 构建 SFT 数据
 
@@ -145,7 +147,7 @@ formal SFT 构建数据时使用 approved/frozen 的正式卡，并写出 datase
 python scripts/build_sft_dataset.py --cards data_cards/chapter_execution_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json --dataset-manifest-output data_sft/sft_chapter_formal_manifest.json
 ```
 
-formal 成功标志：每个 train/A 章节恰好有一张 approved/frozen 正式卡，卡的 StyleContract id/hash 与 JSON 一致，source chapter hash 与章节正文一致，泄漏检查通过，并且 `data_sft/sft_chapter_formal_manifest.json` 记录 dataset、card、chapter、split 和 StyleContract hash provenance。
+formal 成功标志：每个 train/A 章节恰好有一张 `card_status` 为 `approved` 或 `frozen` 的正式卡，卡的 StyleContract id/hash 与 JSON 一致，source chapter hash 与章节正文一致，泄漏检查通过，并且 `data_sft/sft_chapter_formal_manifest.json` 记录 dataset/file hashes、汇总 split counts、card hashes、chapter hashes、leakage report 和 near-duplicate report，支持批次级 provenance 复核。
 
 ### Stage 4 前置：准备执行卡
 
@@ -305,4 +307,4 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - Stage 4.1：长生成质量、预算和审阅门槛。
 - Stage 5A：证据链修正，要求 preflight JSON、raw-first eval、raw scoring、manifest 和 draft/formal 卡门禁可追踪。
 - Stage 5B：StyleContract 闭环，formal SFT 必须绑定 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，`style_contract.md` 只用于人工审阅。
-- Stage 5C：正式 `ChapterExecutionCard` 和数据完整性闭环，formal SFT 使用 approved/frozen 卡并写出 dataset manifest。
+- Stage 5C：正式 `ChapterExecutionCard` 和数据完整性闭环，formal SFT 使用 `card_status` 为 `approved` 或 `frozen` 的卡并写出 dataset manifest。
