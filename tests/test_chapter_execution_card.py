@@ -85,6 +85,27 @@ def test_validate_chapter_execution_card_accepts_valid_card():
     assert is_card_approved_for_formal_sft(card) is True
 
 
+def test_validate_chapter_execution_card_accepts_pending_review_metadata():
+    from small_model_train.schemas.chapter_execution_card import (
+        canonical_card_sha256,
+        validate_chapter_execution_card,
+    )
+
+    card = _card()
+    card["provenance"]["reviewer"] = ""
+    card["provenance"]["reviewed_at"] = ""
+    card["provenance"]["review_notes"] = ""
+    card["card_sha256"] = canonical_card_sha256(card)
+
+    assert validate_chapter_execution_card(card)["provenance"]["reviewer"] == ""
+
+
+def test_utc_now_iso_uses_z_suffix():
+    from small_model_train.schemas.chapter_execution_card import utc_now_iso
+
+    assert utc_now_iso().endswith("Z")
+
+
 def test_card_hash_excludes_card_sha256():
     from small_model_train.schemas.chapter_execution_card import canonical_card_sha256
 

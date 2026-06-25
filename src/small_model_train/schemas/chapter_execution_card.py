@@ -67,7 +67,7 @@ PROVENANCE_FIELDS = (
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def text_sha256(text: str) -> str:
@@ -309,7 +309,8 @@ def _validate_creative_space(creative_space: dict[str, Any]) -> None:
 def _validate_provenance(provenance: dict[str, Any]) -> None:
     _require_fields("provenance", provenance, PROVENANCE_FIELDS)
     for field in PROVENANCE_FIELDS:
-        _require_non_empty_string("provenance", provenance, field)
+        if not isinstance(provenance[field], str):
+            raise ValueError(f"provenance.{field} must be a string")
 
 
 def _ordered_card(card: dict[str, Any]) -> dict[str, Any]:
