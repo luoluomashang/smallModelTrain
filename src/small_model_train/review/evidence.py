@@ -104,7 +104,7 @@ def validate_review_records(
         raise ValueError("raw_outputs must be a dict")
 
     validated: list[dict[str, Any]] = []
-    for index, record in enumerate(records):
+    for index, record in enumerate(records, start=1):
         try:
             if not isinstance(record, dict):
                 raise ValueError("review record must be a JSON object")

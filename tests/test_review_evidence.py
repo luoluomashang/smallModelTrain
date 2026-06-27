@@ -89,3 +89,12 @@ def test_read_write_review_records_round_trip(tmp_path: Path):
     write_review_records(path, [_record()], raw_outputs={"gen-c1": RAW_OUTPUT})
 
     assert read_review_records(path, raw_outputs={"gen-c1": RAW_OUTPUT})[0]["record_id"] == "review-c1-001"
+
+
+def test_validate_review_records_reports_first_record_as_one_based():
+    from small_model_train.review.evidence import validate_review_records
+
+    record = _record(source_output_id="missing-output")
+
+    with pytest.raises(ValueError, match=r"review record 1:"):
+        validate_review_records([record], raw_outputs={"gen-c1": RAW_OUTPUT})
