@@ -163,7 +163,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Planned scope:**
 
-- First repair Stage 5C formal admission gaps: duplicate trainable chapter id gates, duplicate card hash gates, duplicate chapter hash gates, and dataset manifest overwrite protection.
+- First repair Stage 5C formal admission gaps: duplicate trainable chapter id gates, and checks for duplicate manifest card_id/chapter_id keys that would silently overwrite card_hashes/chapter_hashes entries.
 - Create an AI-taste defect taxonomy from the review document.
 - Add evidence-spanned defect records for generated outputs.
 - Collect small-model outputs and author same-plot revisions with card, StyleContract, prompt, and raw output provenance.
@@ -195,7 +195,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Exit criteria:**
 
-- Formal admission rejects duplicate trainable chapter ids, duplicate card hashes, duplicate chapter hashes, and unapproved dataset manifest overwrites.
+- Formal admission rejects duplicate trainable chapter ids, and duplicate manifest card_id/chapter_id keys that would silently overwrite card_hashes/chapter_hashes entries.
 - AI-taste defects are recorded with labels and evidence spans.
 - Same-plot author revisions can be transformed into training data.
 - Style improvements do not reduce plan execution pass rate.
