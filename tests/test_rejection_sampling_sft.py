@@ -165,6 +165,23 @@ def test_build_rejection_sampling_sft_rows_rejects_reviewed_card_status():
         )
 
 
+def test_build_rejection_sampling_sft_rows_rejects_pending_style_contract():
+    from small_model_train.review.rejection_sampling import build_rejection_sampling_sft_rows
+    from small_model_train.style_contract import canonical_style_contract_sha256
+
+    pending_contract = _style_contract()
+    pending_contract["approval_status"] = "pending_review"
+    pending_contract["contract_sha256"] = canonical_style_contract_sha256(pending_contract)
+    card = _formal_card(pending_contract)
+
+    with pytest.raises(ValueError, match="style contract approval_status must be approved or frozen"):
+        build_rejection_sampling_sft_rows(
+            [_revision(card, pending_contract)],
+            [card],
+            pending_contract,
+        )
+
+
 def test_build_rejection_sampling_sft_rows_rejects_prompt_hash_mismatch():
     from small_model_train.review.rejection_sampling import build_rejection_sampling_sft_rows
 

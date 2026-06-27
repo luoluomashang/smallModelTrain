@@ -15,7 +15,10 @@ from small_model_train.schemas.chapter_execution_card import (
     validate_chapter_execution_card,
 )
 from small_model_train.sft_builder import INSTRUCTION
-from small_model_train.style_contract import validate_style_contract_asset
+from small_model_train.style_contract import (
+    is_contract_approved_for_formal_sft,
+    validate_style_contract_asset,
+)
 
 
 def build_rejection_sampling_sft_rows(
@@ -24,6 +27,8 @@ def build_rejection_sampling_sft_rows(
     style_contract: dict[str, Any],
 ) -> list[dict[str, str]]:
     contract = validate_style_contract_asset(style_contract)
+    if not is_contract_approved_for_formal_sft(contract):
+        raise ValueError("style contract approval_status must be approved or frozen")
     card_by_id = _validated_card_by_id(cards)
 
     rows: list[dict[str, str]] = []
