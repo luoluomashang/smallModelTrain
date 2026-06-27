@@ -72,6 +72,67 @@ def test_validate_revision_record_rejects_empty_revised_output():
         validate_revision_record(_revision(revised_output=""))
 
 
+def test_validate_revision_record_provenance_accepts_matching_context():
+    from small_model_train.review.revision_records import validate_revision_record_provenance
+
+    card = {
+        "card_id": "card-c1-v1",
+        "chapter_id": "c1",
+        "style_contract_id": "contract-v1",
+        "style_contract_sha256": "a" * 64,
+    }
+
+    record = validate_revision_record_provenance(
+        _revision(),
+        card=card,
+        style_contract_id="contract-v1",
+        style_contract_sha256="a" * 64,
+        prompt_sha256="b" * 64,
+    )
+
+    assert record["revision_id"] == "rev-c1-001"
+
+
+def test_validate_revision_record_provenance_rejects_card_id_mismatch():
+    from small_model_train.review.revision_records import validate_revision_record_provenance
+
+    card = {
+        "card_id": "other-card",
+        "chapter_id": "c1",
+        "style_contract_id": "contract-v1",
+        "style_contract_sha256": "a" * 64,
+    }
+
+    with pytest.raises(ValueError, match="revision card_id mismatch"):
+        validate_revision_record_provenance(
+            _revision(),
+            card=card,
+            style_contract_id="contract-v1",
+            style_contract_sha256="a" * 64,
+            prompt_sha256="b" * 64,
+        )
+
+
+def test_validate_revision_record_provenance_rejects_prompt_sha256_mismatch():
+    from small_model_train.review.revision_records import validate_revision_record_provenance
+
+    card = {
+        "card_id": "card-c1-v1",
+        "chapter_id": "c1",
+        "style_contract_id": "contract-v1",
+        "style_contract_sha256": "a" * 64,
+    }
+
+    with pytest.raises(ValueError, match="revision prompt_sha256 mismatch"):
+        validate_revision_record_provenance(
+            _revision(),
+            card=card,
+            style_contract_id="contract-v1",
+            style_contract_sha256="a" * 64,
+            prompt_sha256="c" * 64,
+        )
+
+
 def test_read_write_revision_records_round_trip(tmp_path: Path):
     from small_model_train.review.revision_records import read_revision_records, write_revision_records
 

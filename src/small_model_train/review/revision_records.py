@@ -81,6 +81,28 @@ def validate_revision_record(record: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def validate_revision_record_provenance(
+    record: dict[str, Any],
+    *,
+    card: dict[str, Any],
+    style_contract_id: str,
+    style_contract_sha256: str,
+    prompt_sha256: str,
+) -> dict[str, Any]:
+    validated = validate_revision_record(record)
+    if validated["card_id"] != card.get("card_id"):
+        raise ValueError("revision card_id mismatch")
+    if validated["chapter_id"] != card.get("chapter_id"):
+        raise ValueError("revision chapter_id mismatch")
+    if validated["style_contract_id"] != style_contract_id:
+        raise ValueError("revision style_contract_id mismatch")
+    if validated["style_contract_sha256"] != style_contract_sha256:
+        raise ValueError("revision style_contract_sha256 mismatch")
+    if validated["prompt_sha256"] != prompt_sha256:
+        raise ValueError("revision prompt_sha256 mismatch")
+    return validated
+
+
 def is_revision_accepted_for_rejection_sampling(record: dict[str, Any]) -> bool:
     validated = validate_revision_record(record)
     return validated["revision_status"] in ACCEPTED_REVISION_STATUSES
