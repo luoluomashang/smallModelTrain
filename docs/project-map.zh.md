@@ -28,6 +28,10 @@
 - `data_style/`：Stage 5B 生成的 StyleContract JSON 和 style metrics。默认包括 `style_contract_author_main_v1.json` 和 `style_metrics_author_main_v1.json`。
 - `data_sft/`：训练数据和 LLaMA-Factory 数据集元信息。
 - `data_sft/*_manifest.json`：formal SFT dataset manifest，汇总记录 dataset/file hashes、split counts、card hashes、chapter hashes 和 StyleContract hash。
+- `data_review/stage5d_review_records.jsonl`：Stage 5D AI 味缺陷审阅记录，包含标签、证据 spans 和 raw output provenance。
+- `data_review/stage5d_revisions.jsonl`：Stage 5D same-plot 作者修订记录，包含 card、StyleContract、prompt 和 raw output provenance。
+- `data_sft/stage5d_rejection_sampling_sft.jsonl`：从 accepted 作者修订构建的 rejection-sampling SFT 候选数据。
+- `data_pref/stage5d_same_plot_preference.jsonl`：从合法 accepted 修订构建的 same-plot preference 候选数据；不是 DPO、SimPO、ORPO 或 KTO 训练结果。
 
 ## 配置、输出、报告和日志
 

@@ -117,7 +117,7 @@ python scripts/compile_chapter_execution_cards.py --cards data_cards/chapter_car
 
 输出：`data_cards/chapter_execution_cards_reviewed.jsonl`
 
-成功标志：每张候选卡绑定 StyleContract id/hash、source chapter hash 和 `card_sha256`，`card_status` 为 `reviewed`。reviewed 卡不能直接进入 formal SFT；人工审阅通过后，需要把正式卡的 `card_status` 改为 `approved` 或 `frozen`，重新计算 `card_sha256`，并保存为 `data_cards/chapter_execution_cards_approved.jsonl`。
+成功标志：每张候选卡绑定 StyleContract id/hash、章节来源标识和 `card_sha256`，`card_status` 为 `reviewed`。reviewed 卡不能直接进入 formal SFT；人工审阅通过后，需要把正式卡的 `card_status` 改为 `approved` 或 `frozen`，重新计算 `card_sha256`，并保存为 `data_cards/chapter_execution_cards_approved.jsonl`。
 
 ## 6. 构建 SFT 数据
 
@@ -147,7 +147,13 @@ formal SFT 构建数据时使用 approved/frozen 的正式卡，并写出 datase
 python scripts/build_sft_dataset.py --cards data_cards/chapter_execution_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json --dataset-manifest-output data_sft/sft_chapter_formal_manifest.json
 ```
 
-formal 成功标志：每个 train/A 章节恰好有一张 `card_status` 为 `approved` 或 `frozen` 的正式卡，卡的 StyleContract id/hash 与 JSON 一致，source chapter hash 与章节正文一致，泄漏检查通过，并且 `data_sft/sft_chapter_formal_manifest.json` 记录 dataset/file hashes、汇总 split counts、card hashes、chapter hashes、leakage report 和 near-duplicate report，支持批次级 provenance 复核。
+formal 成功标志：每个 train/A 章节恰好有一张 `card_status` 为 `approved` 或 `frozen` 的正式卡，卡的 StyleContract id/hash 与 JSON 一致，章节来源可追溯，泄漏检查通过，并且 `data_sft/sft_chapter_formal_manifest.json` 记录 dataset/file hashes、汇总 split counts、card hashes、chapter hashes、leakage report 和 near-duplicate report，支持批次级 provenance 复核。
+
+### Stage 5D 候选：作者反馈与 AI 味降低
+
+Stage 5D 在 formal admission 先补齐重复 trainable chapter id，以及 manifest 中重复 card_id/chapter_id key 导致 card_hashes/chapter_hashes 静默覆盖的风险检查，然后把作者 same-plot 修订转成候选数据。AI 味 review records 写入 `data_review/stage5d_review_records.jsonl`，作者修订写入 `data_review/stage5d_revisions.jsonl`。accepted 修订可以构建 `data_sft/stage5d_rejection_sampling_sft.jsonl`；合法 same-plot chosen/rejected 对可以构建 `data_pref/stage5d_same_plot_preference.jsonl`。
+
+注意：Stage 5D 的 preference rows 只是候选数据，不是 DPO、SimPO、ORPO、KTO，也不表示已经运行 reward model training 或 preference optimization。Stage 5D 报告只能说明作者反馈数据和候选行是否可追溯，不能证明模型质量已经改善或允许扩大到 100/500 条正式训练。
 
 ### Stage 4 前置：准备执行卡
 
@@ -308,3 +314,4 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - Stage 5A：证据链修正，要求 preflight JSON、raw-first eval、raw scoring、manifest 和 draft/formal 卡门禁可追踪。
 - Stage 5B：StyleContract 闭环，formal SFT 必须绑定 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，`style_contract.md` 只用于人工审阅。
 - Stage 5C：正式 `ChapterExecutionCard` 和数据完整性闭环，formal SFT 使用 `card_status` 为 `approved` 或 `frozen` 的卡并写出 dataset manifest。
+- Stage 5D：先补齐 formal admission 重复 trainable chapter id，以及 manifest 中重复 card_id/chapter_id key 导致 card_hashes/chapter_hashes 静默覆盖的风险检查，再记录 AI 味缺陷、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选；不运行 DPO、SimPO、ORPO、KTO 或偏好优化训练。

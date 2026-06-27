@@ -1449,7 +1449,7 @@ Stage 5A is complete only when all of these are true:
 
 - Stage 5B: StyleContract closure with approved JSON/Markdown assets, richer style metrics, contract hash binding, adapter manifest binding, and author review tables.
 - Stage 5C: Formal ChapterExecutionCard compiler with hard constraints, free-space fields, approval lifecycle, leakage checks, group split, sealed test, and near-duplicate checks.
-- Stage 5D: AI-taste defect taxonomy, same-plot author revisions, rejection sampling SFT, local rewrite records, and small preference optimization experiments.
+- Stage 5D: AI-taste defect taxonomy, same-plot author revisions, rejection-sampling SFT candidates, local rewrite records, and same-plot preference candidate data without running preference optimization.
 
 ---
 

@@ -25,7 +25,8 @@
 5. [Stage 5A 证据链修正操作指南](stage5a-evidence-chain-hardening.zh.md)
 6. [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)
 7. [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)
-8. [Stage 4 决策日志](stage4-decision-log.zh.md)
+8. [Stage 5D 作者反馈与 AI 味降低指南](stage5d-author-feedback-ai-taste-reduction.zh.md)
+9. [Stage 4 决策日志](stage4-decision-log.zh.md)
 
 这条路线适合已经会用 PowerShell、Python，并且只想按步骤复跑数据准备、训练检查、评测和报告的人。
 
@@ -50,6 +51,7 @@
 - [Stage 5A 证据链修正操作指南](stage5a-evidence-chain-hardening.zh.md)：解释 preflight JSON、draft card 显式豁免、raw-first eval、rule projection 和 run manifest 证据链。
 - [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)：解释 StyleContract JSON、Markdown、metrics、approval status 和 formal SFT 绑定。
 - [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)：解释 ChapterExecutionCard、正式卡审批、数据 split、泄漏检查和 dataset manifest。
+- [Stage 5D 作者反馈与 AI 味降低指南](stage5d-author-feedback-ai-taste-reduction.zh.md)：解释 formal admission 修复、AI 味缺陷证据、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选。
 - [Stage 4 决策日志](stage4-decision-log.zh.md)：记录当前是否允许扩大训练规模，以及原因。
 - [Stage 4.1 Full50 归档](stage4-1-full50-archive.zh.md)：归档 full50 运行证据。
 - [Stage 4.1 Full50 Manual Review Findings](stage4-1-full50-manual-review.zh.md)：记录人工复核发现。
@@ -63,6 +65,8 @@
 - `data_cards/`：章节卡、评测卡、质量子集卡。
 - `data_style/`：Stage 5B 生成的 StyleContract JSON 和 style metrics。
 - `data_sft/`：给训练用的 SFT 数据和数据集元信息。
+- `data_review/`：Stage 5D 作者反馈、AI 味缺陷审阅和 same-plot 修订记录。
+- `data_pref/`：Stage 5D same-plot preference 候选数据；它不是 DPO、SimPO、ORPO 或 KTO 训练结果。
 - `outputs/`：训练产物、adapter、生成结果、metrics。
 - `reports/`：模型检查、环境检查、readiness、评测和质量报告。
 - `logs/`：训练、推理、OOM 探测等运行日志。

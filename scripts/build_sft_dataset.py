@@ -46,19 +46,27 @@ def _split_manifest(chapters: list[dict]) -> dict[str, dict[str, int]]:
 
 
 def _card_hashes(cards: list[dict]) -> dict[str, str]:
-    return {
-        str(card["card_id"]): str(card["card_sha256"])
-        for card in cards
-        if "card_id" in card and "card_sha256" in card
-    }
+    hashes: dict[str, str] = {}
+    for index, card in enumerate(cards, start=1):
+        if "card_id" not in card or "card_sha256" not in card:
+            continue
+        card_id = str(card["card_id"])
+        if card_id in hashes:
+            raise ValueError(f"duplicate card id for manifest: {card_id} row {index}")
+        hashes[card_id] = str(card["card_sha256"])
+    return hashes
 
 
 def _chapter_hashes(chapters: list[dict]) -> dict[str, str]:
-    return {
-        str(chapter["id"]): text_sha256(str(chapter.get("text") or ""))
-        for chapter in chapters
-        if "id" in chapter
-    }
+    hashes: dict[str, str] = {}
+    for index, chapter in enumerate(chapters, start=1):
+        if "id" not in chapter:
+            continue
+        chapter_id = str(chapter["id"])
+        if chapter_id in hashes:
+            raise ValueError(f"duplicate chapter id for manifest: {chapter_id} row {index}")
+        hashes[chapter_id] = text_sha256(str(chapter.get("text") or ""))
+    return hashes
 
 
 def _reject_output_path_collisions(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
