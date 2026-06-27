@@ -232,3 +232,26 @@ def test_build_same_plot_preference_dataset_cli_writes_jsonl(tmp_path):
             "source": "stage5d_same_plot_revision",
         }
     ]
+
+
+def test_build_same_plot_preference_dataset_cli_fails_missing_revisions(tmp_path):
+    revisions_path = tmp_path / "missing_revisions.jsonl"
+    output_path = tmp_path / "same_plot_preference.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_same_plot_preference_dataset.py",
+            "--revisions",
+            str(revisions_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "revisions JSONL not found" in result.stderr
+    assert not output_path.exists()

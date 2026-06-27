@@ -20,7 +20,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        rows = build_same_plot_preference_candidates(read_jsonl(args.revisions))
+        revisions_path = Path(args.revisions)
+        if not revisions_path.exists():
+            raise ValueError(f"revisions JSONL not found: {revisions_path}")
+
+        rows = build_same_plot_preference_candidates(read_jsonl(revisions_path))
         write_jsonl(args.output, rows)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
