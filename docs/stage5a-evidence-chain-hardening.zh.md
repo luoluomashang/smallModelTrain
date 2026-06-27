@@ -93,6 +93,6 @@ Stage 5A 通过后，下一步不是直接扩大样本，而是进入 Stage 5B/5
 
 - Stage 5B：收敛 StyleContract，补齐可批准、可哈希、可绑定到 adapter manifest 的风格契约资产。
 - Stage 5C：编译正式 ChapterExecutionCard，完成 approval lifecycle、leakage check、group split、sealed test 和近重复检查。
-- Stage 5D：在真实审阅证据基础上整理 AI-taste 缺陷分类、作者修订和偏好优化实验。
+- Stage 5D：在真实审阅证据基础上整理 AI-taste 缺陷分类、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选数据；不运行偏好优化训练。
 
 只有 formal cards、raw-first eval、raw scoring、真实审阅和 manifest 证据都闭环后，才讨论下一次样本扩量。
