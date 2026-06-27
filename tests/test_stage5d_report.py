@@ -37,13 +37,13 @@ def test_build_stage5d_summary_counts_review_and_revision_metrics():
         },
     ]
     revision_records = [
-        {"status": "accepted", "model_output": "你好世界", "revised_output": "你好"},
+        {"revision_status": "accepted", "model_output": "你好世界", "revised_output": "你好"},
         {
-            "status": "accepted_with_minor_edits",
+            "revision_status": "accepted_with_minor_edits",
             "model_output": "春风又绿江南岸",
             "revised_output": "春风绿岸",
         },
-        {"status": "rejected", "model_output": "甲乙丙", "revised_output": "甲乙丙丁"},
+        {"revision_status": "rejected", "model_output": "甲乙丙", "revised_output": "甲乙丙丁"},
     ]
 
     summary = build_stage5d_summary(
@@ -127,7 +127,7 @@ def test_cli_writes_summary_json_and_markdown_report(tmp_path: Path):
     )
     _write_jsonl(
         revisions,
-        [{"status": "accepted", "model_output": "山河", "revised_output": "山河故人"}],
+        [{"revision_status": "accepted", "model_output": "山河", "revised_output": "山河故人"}],
     )
     _write_jsonl(rejection_sampling_rows, [{"id": "rs-1"}])
     _write_jsonl(preference_rows, [{"id": "pref-1"}, {"id": "pref-2"}])

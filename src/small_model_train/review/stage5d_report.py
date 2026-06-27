@@ -18,7 +18,9 @@ def build_stage5d_summary(
     preference_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     defects = _collect_defects(review_records)
-    accepted_revisions = sum(1 for row in revision_records if row.get("status") in ACCEPTED_STATUSES)
+    accepted_revisions = sum(
+        1 for row in revision_records if row.get("revision_status") in ACCEPTED_STATUSES
+    )
     revision_count = len(revision_records)
     return {
         "reviewed_outputs": len(review_records),
