@@ -36,14 +36,14 @@ def _style_contract() -> dict:
     )
 
 
-def _formal_card(contract: dict | None = None) -> dict:
+def _formal_card(contract: dict | None = None, *, card_status: str = "approved") -> dict:
     from small_model_train.schemas.chapter_execution_card import build_chapter_execution_card
 
     contract = contract or _style_contract()
     return build_chapter_execution_card(
         card_id="card-c1-v1",
         chapter_id="c1",
-        card_status="approved",
+        card_status=card_status,
         style_contract_id=contract["style_contract_id"],
         style_contract_sha256=contract["contract_sha256"],
         source_chapter_text="这一章用于计算来源哈希。",
@@ -147,6 +147,20 @@ def test_build_rejection_sampling_sft_rows_rejects_unaccepted_revision():
         build_rejection_sampling_sft_rows(
             [_revision(card, contract, revision_status="rejected")],
             [card],
+            contract,
+        )
+
+
+def test_build_rejection_sampling_sft_rows_rejects_reviewed_card_status():
+    from small_model_train.review.rejection_sampling import build_rejection_sampling_sft_rows
+
+    contract = _style_contract()
+    reviewed_card = _formal_card(contract, card_status="reviewed")
+
+    with pytest.raises(ValueError, match="formal card status must be approved or frozen"):
+        build_rejection_sampling_sft_rows(
+            [_revision(reviewed_card, contract)],
+            [reviewed_card],
             contract,
         )
 

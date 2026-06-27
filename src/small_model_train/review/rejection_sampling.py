@@ -9,7 +9,11 @@ from small_model_train.review.revision_records import (
     is_revision_accepted_for_rejection_sampling,
     validate_revision_record_provenance,
 )
-from small_model_train.schemas.chapter_execution_card import text_sha256, validate_chapter_execution_card
+from small_model_train.schemas.chapter_execution_card import (
+    is_card_approved_for_formal_sft,
+    text_sha256,
+    validate_chapter_execution_card,
+)
 from small_model_train.sft_builder import INSTRUCTION
 from small_model_train.style_contract import validate_style_contract_asset
 
@@ -70,6 +74,8 @@ def _validated_card_by_id(cards: list[dict[str, Any]]) -> dict[str, dict[str, An
             raise ValueError(f"card {index}: {exc}") from exc
 
         card_id = validated_card["card_id"]
+        if not is_card_approved_for_formal_sft(validated_card):
+            raise ValueError(f"formal card status must be approved or frozen: {card_id}")
         if card_id in card_by_id:
             raise ValueError(f"duplicate formal card id: {card_id}")
         card_by_id[card_id] = validated_card
