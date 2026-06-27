@@ -52,7 +52,9 @@ def validate_formal_card_batch(
         )
 
     errors.extend(_duplicate_trainable_chapter_id_errors(chapters))
+    duplicate_chapter_rows_by_id = _duplicate_chapter_rows_by_id(chapters)
     chapter_by_id = _chapter_by_id(chapters)
+    reported_duplicate_references: set[str] = set()
     required_train_chapter_ids = {
         str(chapter.get("id"))
         for chapter in chapters
@@ -74,6 +76,12 @@ def validate_formal_card_batch(
 
         chapter_id = card["chapter_id"]
         card_id = card["card_id"]
+        duplicate_rows = duplicate_chapter_rows_by_id.get(chapter_id)
+        if duplicate_rows is not None and chapter_id not in reported_duplicate_references:
+            rows = ", ".join(str(row) for row in duplicate_rows)
+            errors.append(f"duplicate referenced chapter id: {chapter_id} rows {rows}")
+            reported_duplicate_references.add(chapter_id)
+
         contract_matches = True
         if card["style_contract_id"] != contract["style_contract_id"]:
             errors.append(f"style_contract_id mismatch: {card_id} chapter {chapter_id}")
@@ -119,6 +127,20 @@ def validate_formal_card_batch(
         "passed": not errors,
         "errors": errors,
         "card_by_chapter_id": card_by_chapter_id,
+    }
+
+
+def _duplicate_chapter_rows_by_id(chapters: list[dict[str, Any]]) -> dict[str, list[int]]:
+    rows_by_id: dict[str, list[int]] = {}
+    for index, chapter in enumerate(chapters, start=1):
+        if not isinstance(chapter, dict) or chapter.get("id") is None:
+            continue
+        chapter_id = str(chapter["id"])
+        rows_by_id.setdefault(chapter_id, []).append(index)
+    return {
+        chapter_id: rows
+        for chapter_id, rows in rows_by_id.items()
+        if len(rows) > 1
     }
 
 

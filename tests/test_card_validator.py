@@ -245,3 +245,24 @@ def test_validate_formal_card_batch_allows_duplicate_non_train_ids_when_unrefere
 
     assert result["passed"] is True
     assert result["errors"] == []
+
+
+def test_validate_formal_card_batch_rejects_referenced_duplicate_non_train_ids():
+    from small_model_train.cards.card_validator import validate_formal_card_batch
+
+    train_text = "这一章用于计算来源哈希。"
+    duplicate_text = "验证集重复二。"
+    chapters = [
+        {"id": "c1", "text": train_text, "split": "train", "quality_tag": "A"},
+        {"id": "dup", "text": "验证集重复一。", "split": "validation", "quality_tag": "A"},
+        {"id": "dup", "text": duplicate_text, "split": "validation", "quality_tag": "A"},
+    ]
+    cards = [
+        _formal_card("c1", text=train_text),
+        _formal_card("dup", text=duplicate_text),
+    ]
+
+    result = validate_formal_card_batch(cards, chapters, _style_contract())
+
+    assert result["passed"] is False
+    assert "duplicate referenced chapter id: dup" in "\n".join(result["errors"])
