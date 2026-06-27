@@ -76,6 +76,7 @@ python scripts/check_stage3_data_readiness.py --eval-cards data_cards/eval_cards
 - [Stage 5A 证据链修正操作指南](docs/stage5a-evidence-chain-hardening.zh.md)
 - [Stage 5B StyleContract 闭环指南](docs/stage5b-style-contract-closure.zh.md)
 - [Stage 5C 正式章节执行卡与数据完整性指南](docs/stage5c-formal-execution-cards-data-integrity.zh.md)
+- [Stage 5D 作者反馈与 AI 味降低指南](docs/stage5d-author-feedback-ai-taste-reduction.zh.md)
 - [Stage 4 决策日志](docs/stage4-decision-log.zh.md)
 - [第四阶段总结与下一阶段前瞻](docs/stage4-summary-next-outlook.zh.md)
 

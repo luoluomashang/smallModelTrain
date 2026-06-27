@@ -155,7 +155,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5D: Author Feedback And AI-Taste Reduction
 
-**Status:** Forward index only. Do not implement until Stage 5C formal cards and sealed evaluation are stable.
+**Status:** Implemented as Stage 5D docs and data-candidate tooling after merging the Stage 5C.1 formal admission repair into this stage.
 
 **Future plan file:** `docs/superpowers/plans/2026-06-23-stage5d-author-feedback-ai-taste-reduction.md`
 
@@ -163,13 +163,15 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Planned scope:**
 
+- First repair Stage 5C formal admission gaps: duplicate trainable chapter id gates, duplicate card hash gates, duplicate chapter hash gates, and dataset manifest overwrite protection.
 - Create an AI-taste defect taxonomy from the review document.
 - Add evidence-spanned defect records for generated outputs.
-- Collect small-model outputs and author same-plot revisions.
+- Collect small-model outputs and author same-plot revisions with card, StyleContract, prompt, and raw output provenance.
 - Build rejection-sampling SFT rows from accepted candidates.
 - Add local rewrite record format for targeted small-model rewrites.
-- Add optional same-plot DPO dataset builder after enough paired revisions exist.
+- Build same-plot preference candidate rows from valid accepted revisions.
 - Track author acceptance rate, major-edit character count, defect rate per thousand characters, and regression samples.
+- Do not run DPO, SimPO, ORPO, KTO, reward model training, or preference optimization in Stage 5D; preference rows are candidate data only.
 
 **Likely files:**
 
@@ -193,6 +195,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Exit criteria:**
 
+- Formal admission rejects duplicate trainable chapter ids, duplicate card hashes, duplicate chapter hashes, and unapproved dataset manifest overwrites.
 - AI-taste defects are recorded with labels and evidence spans.
 - Same-plot author revisions can be transformed into training data.
 - Style improvements do not reduce plan execution pass rate.
@@ -202,7 +205,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5E: Controlled Experimentation And Efficiency
 
-**Status:** Forward index only. Do not implement until Stage 5A-5D produce trustworthy metrics.
+**Status:** Forward index only. Do not implement until Stage 5D produces stable same-card, same-style, same-seed evidence.
 
 **Future plan file:** `docs/superpowers/plans/2026-06-23-stage5e-controlled-experimentation-efficiency.md`
 
@@ -211,7 +214,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 **Planned scope:**
 
 - Define paired experiment manifests.
-- Compare base model, current SFT, style-contract-enhanced SFT, formal-card SFT, rejection-sampling SFT, optional CPT, optional DPO, and candidate PEFT variants.
+- Compare base model, current SFT, style-contract-enhanced SFT, formal-card SFT, rejection-sampling SFT, optional CPT, optional later preference-optimization methods, and candidate PEFT variants.
 - Record seeds, model revisions, dataset hashes, style contract hashes, card set hashes, generation params, and adapter hashes.
 - Add paired eval report with win/loss/tie and regression samples.
 - Experiment with learning rate, rank, rsLoRA, PiSSA, DoRA, packing, FlashAttention, and alternative base models one major variable at a time.
