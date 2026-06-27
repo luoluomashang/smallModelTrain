@@ -29,15 +29,17 @@ def validate_style_defect(defect: dict[str, Any], *, index: int = 0) -> dict[str
         raise ValueError(
             f"defects[{index}].severity must be one of: {', '.join(sorted(DEFECT_SEVERITIES))}"
         )
-    for field in ("evidence_text", "suggested_fix"):
-        if not isinstance(defect.get(field), str):
-            raise ValueError(f"defects[{index}].{field} must be a string")
+    evidence_text = defect.get("evidence_text")
+    if not isinstance(evidence_text, str) or not evidence_text.strip():
+        raise ValueError(f"defects[{index}].evidence_text must be a non-empty string")
+    if not isinstance(defect.get("suggested_fix"), str):
+        raise ValueError(f"defects[{index}].suggested_fix must be a string")
     for field in ("evidence_start", "evidence_end"):
         value = defect.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise ValueError(f"defects[{index}].{field} must be an int >= 0")
-    if defect["evidence_end"] < defect["evidence_start"]:
-        raise ValueError(f"defects[{index}].evidence_end must be >= evidence_start")
+    if defect["evidence_end"] <= defect["evidence_start"]:
+        raise ValueError(f"defects[{index}].evidence_end must be > evidence_start")
     return defect
 
 

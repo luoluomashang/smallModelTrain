@@ -38,6 +38,38 @@ def test_validate_style_defect_rejects_unknown_label(label):
         )
 
 
+def test_validate_style_defect_rejects_empty_evidence_text():
+    from small_model_train.review.style_defects import validate_style_defect
+
+    with pytest.raises(ValueError, match="evidence_text"):
+        validate_style_defect(
+            {
+                "label": "generic_phrase",
+                "severity": "minor",
+                "evidence_text": "   ",
+                "evidence_start": 0,
+                "evidence_end": 2,
+                "suggested_fix": "",
+            }
+        )
+
+
+def test_validate_style_defect_rejects_zero_width_evidence_span():
+    from small_model_train.review.style_defects import validate_style_defect
+
+    with pytest.raises(ValueError, match="evidence_end"):
+        validate_style_defect(
+            {
+                "label": "generic_phrase",
+                "severity": "minor",
+                "evidence_text": "文本",
+                "evidence_start": 1,
+                "evidence_end": 1,
+                "suggested_fix": "",
+            }
+        )
+
+
 def test_summarize_style_defects_counts_labels_and_severity():
     from small_model_train.review.style_defects import summarize_style_defects
 
