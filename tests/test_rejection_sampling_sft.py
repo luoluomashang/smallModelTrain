@@ -232,3 +232,73 @@ def test_build_rejection_sampling_sft_cli_writes_jsonl(tmp_path: Path):
     rows = read_jsonl(output_path)
     assert rows[0]["revision_id"] == "rev-c1-001"
     assert rows[0]["output"] == REVISED_OUTPUT
+
+
+def test_build_rejection_sampling_sft_cli_fails_when_revisions_jsonl_missing(tmp_path: Path):
+    from small_model_train.style_contract import write_style_contract_asset
+
+    contract = _style_contract()
+    card = _formal_card(contract)
+    revisions_path = tmp_path / "missing_revisions.jsonl"
+    cards_path = tmp_path / "cards.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "rejection_sft.jsonl"
+    write_jsonl(cards_path, [card])
+    write_style_contract_asset(contract_path, contract)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_rejection_sampling_sft.py",
+            "--revisions",
+            str(revisions_path),
+            "--cards",
+            str(cards_path),
+            "--style-contract-json",
+            str(contract_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "revisions JSONL not found" in result.stderr
+    assert not output_path.exists()
+
+
+def test_build_rejection_sampling_sft_cli_fails_when_cards_jsonl_missing(tmp_path: Path):
+    from small_model_train.style_contract import write_style_contract_asset
+
+    contract = _style_contract()
+    card = _formal_card(contract)
+    revisions_path = tmp_path / "revisions.jsonl"
+    cards_path = tmp_path / "missing_cards.jsonl"
+    contract_path = tmp_path / "style_contract.json"
+    output_path = tmp_path / "rejection_sft.jsonl"
+    write_jsonl(revisions_path, [_revision(card, contract)])
+    write_style_contract_asset(contract_path, contract)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_rejection_sampling_sft.py",
+            "--revisions",
+            str(revisions_path),
+            "--cards",
+            str(cards_path),
+            "--style-contract-json",
+            str(contract_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "cards JSONL not found" in result.stderr
+    assert not output_path.exists()

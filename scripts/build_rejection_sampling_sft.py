@@ -14,6 +14,12 @@ from small_model_train.review.rejection_sampling import build_rejection_sampling
 from small_model_train.style_contract import read_style_contract_asset
 
 
+def _read_required_jsonl(path: str, *, label: str) -> list[dict]:
+    if not Path(path).exists():
+        raise ValueError(f"{label} JSONL not found: {path}")
+    return read_jsonl(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--revisions", required=True)
@@ -23,8 +29,8 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        revisions = read_jsonl(args.revisions)
-        cards = read_jsonl(args.cards)
+        revisions = _read_required_jsonl(args.revisions, label="revisions")
+        cards = _read_required_jsonl(args.cards, label="cards")
         style_contract = read_style_contract_asset(args.style_contract_json)
         rows = build_rejection_sampling_sft_rows(revisions, cards, style_contract)
         write_jsonl(args.output, rows)
