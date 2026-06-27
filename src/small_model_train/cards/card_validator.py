@@ -21,6 +21,10 @@ LEAK_MIN_CHARS = 12
 FUTURE_CONTEXT_SPLITS = {"validation", "sealed", "eval"}
 
 
+def _is_trainable_chapter(chapter: dict[str, Any]) -> bool:
+    return chapter.get("split") == "train" and chapter.get("quality_tag") == "A"
+
+
 def validate_formal_card_batch(
     cards: list[dict[str, Any]],
     chapters: list[dict[str, Any]],
@@ -47,12 +51,13 @@ def validate_formal_card_batch(
             f"{contract['style_contract_id']} status={contract['approval_status']}"
         )
 
+    errors.extend(_duplicate_trainable_chapter_id_errors(chapters))
     chapter_by_id = _chapter_by_id(chapters)
     required_train_chapter_ids = {
         str(chapter.get("id"))
         for chapter in chapters
-        if chapter.get("split") == "train"
-        and chapter.get("quality_tag") == "A"
+        if isinstance(chapter, dict)
+        and _is_trainable_chapter(chapter)
         and chapter.get("id") is not None
     }
 
@@ -123,6 +128,26 @@ def _chapter_by_id(chapters: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         for chapter in chapters
         if isinstance(chapter, dict) and chapter.get("id") is not None
     }
+
+
+def _duplicate_trainable_chapter_id_errors(chapters: list[dict[str, Any]]) -> list[str]:
+    first_index_by_id: dict[str, int] = {}
+    errors: list[str] = []
+    for index, chapter in enumerate(chapters, start=1):
+        if not isinstance(chapter, dict) or not _is_trainable_chapter(chapter):
+            continue
+        if chapter.get("id") is None:
+            continue
+        chapter_id = str(chapter["id"])
+        previous_index = first_index_by_id.get(chapter_id)
+        if previous_index is None:
+            first_index_by_id[chapter_id] = index
+        else:
+            errors.append(
+                "duplicate trainable chapter id: "
+                f"{chapter_id} rows {previous_index}, {index}"
+            )
+    return errors
 
 
 def _leakage_errors(

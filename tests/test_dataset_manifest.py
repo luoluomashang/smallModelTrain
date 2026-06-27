@@ -188,3 +188,41 @@ def _style_contract_asset(
             "ai_taste": {"phrase_hits": {}, "total_hits": 0, "hits_per_10k_chars": 0},
         },
     )
+
+
+def test_build_sft_dataset_chapter_hashes_reject_duplicate_ids():
+    import importlib.util
+    from pathlib import Path
+
+    script_path = Path("scripts/build_sft_dataset.py")
+    spec = importlib.util.spec_from_file_location("build_sft_dataset", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(ValueError, match="duplicate chapter id for manifest: c1"):
+        module._chapter_hashes(
+            [
+                {"id": "c1", "text": "第一条正文"},
+                {"id": "c1", "text": "第二条正文"},
+            ]
+        )
+
+
+def test_build_sft_dataset_card_hashes_reject_duplicate_ids():
+    import importlib.util
+    from pathlib import Path
+
+    script_path = Path("scripts/build_sft_dataset.py")
+    spec = importlib.util.spec_from_file_location("build_sft_dataset", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(ValueError, match="duplicate card id for manifest: card-c1-v1"):
+        module._card_hashes(
+            [
+                {"card_id": "card-c1-v1", "card_sha256": "a" * 64},
+                {"card_id": "card-c1-v1", "card_sha256": "b" * 64},
+            ]
+        )

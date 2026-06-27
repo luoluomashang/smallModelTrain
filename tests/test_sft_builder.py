@@ -1164,3 +1164,15 @@ def test_build_sft_dataset_cli_rejects_manifest_in_draft_mode(tmp_path):
     assert "dataset manifest requires formal SFT mode" in result.stderr
     assert not output_path.exists()
     assert not manifest_path.exists()
+
+
+def test_build_formal_sft_rows_rejects_duplicate_train_chapter_id_before_rows():
+    contract = _formal_style_contract_for_stage5c()
+    chapters = [
+        {"id": "c1", "text": "第一条重复章节正文。", "split": "train", "quality_tag": "A"},
+        {"id": "c1", "text": "这一章用于计算来源哈希。", "split": "train", "quality_tag": "A"},
+    ]
+    card = _formal_card_for_stage5c(text="这一章用于计算来源哈希。")
+
+    with pytest.raises(ValueError, match="duplicate trainable chapter id: c1"):
+        build_formal_sft_rows([card], chapters, contract)
