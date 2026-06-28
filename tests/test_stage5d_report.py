@@ -8,6 +8,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "build_stage5d_review_report.py"
+RUNBOOK = REPO_ROOT / "docs" / "stage5d-author-feedback-ai-taste-reduction.zh.md"
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -122,6 +123,35 @@ def test_build_stage5d_summary_tracks_density_edit_burden_and_split_risk():
     assert summary["candidate_split_counts"] == {"sealed": 1, "train": 1}
     assert summary["non_train_rejection_sampling_rows"] == ["rev-2"]
     assert summary["review_source_counts"] == {"author": 1, "deterministic": 1}
+
+
+def test_build_stage5d_summary_rejects_missing_raw_output_ids():
+    import pytest
+
+    from small_model_train.review.stage5d_report import build_stage5d_summary
+
+    with pytest.raises(ValueError, match="missing raw output for reviewed output id: gen-missing"):
+        build_stage5d_summary(
+            [{"source_output_id": "gen-missing", "defects": []}],
+            [],
+            rejection_sampling_rows=[],
+            preference_rows=[],
+            raw_outputs={},
+        )
+
+
+def test_build_stage5d_summary_counts_reviewer_when_review_source_is_absent():
+    from small_model_train.review.stage5d_report import build_stage5d_summary
+
+    summary = build_stage5d_summary(
+        [{"id": "out-1", "reviewer": "author", "defects": []}],
+        [],
+        rejection_sampling_rows=[],
+        preference_rows=[],
+        raw_outputs={"out-1": "山河"},
+    )
+
+    assert summary["review_source_counts"] == {"author": 1}
 
 
 def test_build_stage5d_summary_empty_input_returns_zero_boundary_summary():
@@ -277,6 +307,95 @@ def test_cli_requires_raw_outputs_for_density_metrics(tmp_path: Path):
     assert not report_output.exists()
 
 
+def test_cli_raw_outputs_prefers_raw_output_before_output_and_text(tmp_path: Path):
+    review_records = tmp_path / "review.jsonl"
+    revisions = tmp_path / "revisions.jsonl"
+    rejection_sampling_rows = tmp_path / "rs.jsonl"
+    preference_rows = tmp_path / "pref.jsonl"
+    raw_outputs = tmp_path / "raw_outputs.jsonl"
+    summary_output = tmp_path / "out" / "summary.json"
+    report_output = tmp_path / "out" / "report.md"
+    _write_jsonl(review_records, [{"id": "out-1", "defects": []}])
+    _write_jsonl(revisions, [])
+    _write_jsonl(rejection_sampling_rows, [])
+    _write_jsonl(preference_rows, [])
+    _write_jsonl(raw_outputs, [{"id": "out-1", "output": "", "raw_output": "山河"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--review-records",
+            str(review_records),
+            "--revisions",
+            str(revisions),
+            "--rejection-sampling-rows",
+            str(rejection_sampling_rows),
+            "--preference-rows",
+            str(preference_rows),
+            "--raw-outputs",
+            str(raw_outputs),
+            "--summary-output",
+            str(summary_output),
+            "--report-output",
+            str(report_output),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    assert summary["reviewed_output_chars"] == 2
+
+
+def test_cli_rejects_empty_raw_output_text(tmp_path: Path):
+    review_records = tmp_path / "review.jsonl"
+    revisions = tmp_path / "revisions.jsonl"
+    rejection_sampling_rows = tmp_path / "rs.jsonl"
+    preference_rows = tmp_path / "pref.jsonl"
+    raw_outputs = tmp_path / "raw_outputs.jsonl"
+    summary_output = tmp_path / "out" / "summary.json"
+    report_output = tmp_path / "out" / "report.md"
+    _write_jsonl(review_records, [{"id": "out-1", "defects": []}])
+    _write_jsonl(revisions, [])
+    _write_jsonl(rejection_sampling_rows, [])
+    _write_jsonl(preference_rows, [])
+    _write_jsonl(raw_outputs, [{"id": "out-1", "raw_output": ""}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--review-records",
+            str(review_records),
+            "--revisions",
+            str(revisions),
+            "--rejection-sampling-rows",
+            str(rejection_sampling_rows),
+            "--preference-rows",
+            str(preference_rows),
+            "--raw-outputs",
+            str(raw_outputs),
+            "--summary-output",
+            str(summary_output),
+            "--report-output",
+            str(report_output),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "raw output row 1 has empty text" in result.stderr
+    assert not summary_output.exists()
+    assert not report_output.exists()
+
+
 def test_cli_fails_nonzero_without_outputs_when_required_input_path_is_missing(tmp_path: Path):
     missing_review_records = tmp_path / "missing-review.jsonl"
     revisions = tmp_path / "revisions.jsonl"
@@ -320,3 +439,10 @@ def test_cli_fails_nonzero_without_outputs_when_required_input_path_is_missing(t
     assert str(missing_review_records) in result.stderr
     assert not summary_output.exists()
     assert not report_output.exists()
+
+
+def test_stage5d_runbook_report_command_includes_required_raw_outputs():
+    assert (
+        "--raw-outputs outputs/stage5d_generation_records.jsonl"
+        in RUNBOOK.read_text(encoding="utf-8")
+    )

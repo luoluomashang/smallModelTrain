@@ -85,12 +85,14 @@ def _read_raw_outputs(path: str) -> dict[str, str]:
         output_text = _raw_output_text(row)
         if output_text is None:
             raise ValueError(f"raw output row {index} is missing output/text/raw_output")
+        if output_text == "":
+            raise ValueError(f"raw output row {index} has empty text")
         raw_outputs[output_key] = output_text
     return raw_outputs
 
 
 def _raw_output_text(row: dict) -> str | None:
-    for field in ("output", "text", "raw_output"):
+    for field in ("raw_output", "output", "text"):
         value = row.get(field)
         if isinstance(value, str):
             return value

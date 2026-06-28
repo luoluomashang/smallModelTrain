@@ -142,15 +142,26 @@ def _reviewed_output_chars(
     review_records: list[dict[str, Any]],
     raw_outputs: dict[str, str],
 ) -> int:
-    reviewed_output_ids: set[str] = set()
+    reviewed_output_ids: list[str] = []
+    seen_output_ids: set[str] = set()
     for record in review_records:
         output_id = record.get("source_output_id") or record.get("id")
-        if output_id is not None:
-            reviewed_output_ids.add(str(output_id))
-    return sum(
-        count_chinese_chars(raw_outputs.get(output_id, ""))
-        for output_id in reviewed_output_ids
-    )
+        if output_id is None:
+            raise ValueError("review record is missing source_output_id/id")
+        output_key = str(output_id)
+        if output_key not in seen_output_ids:
+            reviewed_output_ids.append(output_key)
+            seen_output_ids.add(output_key)
+
+    total = 0
+    for output_id in reviewed_output_ids:
+        if output_id not in raw_outputs:
+            raise ValueError(f"missing raw output for reviewed output id: {output_id}")
+        raw_output = raw_outputs[output_id]
+        if raw_output == "":
+            raise ValueError(f"empty raw output for reviewed output id: {output_id}")
+        total += count_chinese_chars(raw_output)
+    return total
 
 
 def _defect_density_per_10k_chars(total_defects: int, reviewed_output_chars: int) -> float:
@@ -188,7 +199,7 @@ def _candidate_row_id(row: dict[str, Any], index: int) -> str:
 def _review_source_counts(review_records: list[dict[str, Any]]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for record in review_records:
-        counts[str(record.get("review_source") or "unknown")] += 1
+        counts[str(record.get("review_source") or record.get("reviewer") or "unknown")] += 1
     return dict(sorted(counts.items()))
 
 

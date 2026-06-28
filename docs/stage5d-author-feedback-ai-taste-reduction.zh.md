@@ -72,7 +72,7 @@ python scripts/build_same_plot_preference_dataset.py --revisions data_review/sta
 构建 Stage 5D 汇总和 Markdown 报告：
 
 ```powershell
-python scripts/build_stage5d_review_report.py --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --summary-output reports/stage5d_review_summary.json --report-output reports/stage5d_review_report.md
+python scripts/build_stage5d_review_report.py --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --raw-outputs outputs/stage5d_generation_records.jsonl --summary-output reports/stage5d_review_summary.json --report-output reports/stage5d_review_report.md
 ```
 
 输出：
