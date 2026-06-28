@@ -157,7 +157,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Status:** Implemented as Stage 5D docs and data-candidate tooling after merging the Stage 5C.1 formal admission repair into this stage.
 
-**Future plan file:** `docs/superpowers/plans/2026-06-23-stage5d-author-feedback-ai-taste-reduction.md`
+**Plan file:** `docs/superpowers/plans/2026-06-27-stage5d-author-feedback-ai-taste-reduction.md`
 
 **Purpose:** Reduce AI-like prose using same-plot production feedback without letting the large model take over final writing.
 
@@ -205,7 +205,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5E: Controlled Experimentation And Efficiency
 
-**Status:** Forward index only. Do not implement until Stage 5D produces stable same-card, same-style, same-seed evidence.
+**Status:** Blocked until `reports/stage5e_entry_check.json` exists with `"passed": true`.
 
 **Future plan file:** `docs/superpowers/plans/2026-06-23-stage5e-controlled-experimentation-efficiency.md`
 
@@ -231,8 +231,8 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Entry criteria:**
 
-- Stage 5D has stable same-card, same-style, same-seed evaluation records.
-- Author review or blind-review acceptance data exists.
+- `scripts/check_stage5e_entry.py` exits 0 and writes `reports/stage5e_entry_check.json` with `"passed": true`.
+- Full pytest passes after the Stage 5D closure plan.
 
 **Exit criteria:**
 
@@ -256,7 +256,13 @@ These gates apply to every stage after Stage 5A:
 
 ## Current Execution Decision
 
-Execute **Stage 5A only** with subagent-driven development. Keep Stage 5B-5E as roadmap/index material until Stage 5A exits cleanly.
+Do not execute Stage 5E until the Stage 5D closure plan passes:
+
+```powershell
+python scripts/check_stage5e_entry.py --summary reports/stage5d_review_summary.json --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --generation-records outputs/stage5d_generation_records.jsonl --output reports/stage5e_entry_check.json
+```
+
+After that command exits 0 and full pytest passes, Stage 5E planning may begin.
 
 ---
 

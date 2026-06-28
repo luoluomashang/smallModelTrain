@@ -72,7 +72,7 @@ python scripts/build_same_plot_preference_dataset.py --revisions data_review/sta
 构建 Stage 5D 汇总和 Markdown 报告：
 
 ```powershell
-python scripts/build_stage5d_review_report.py --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --raw-outputs outputs/stage5d_generation_records.jsonl --summary-output reports/stage5d_review_summary.json --report-output reports/stage5d_review_report.md
+python scripts/build_stage5d_review_report.py --review-records data_review/stage5d_review_records.jsonl --raw-outputs outputs/stage5d_generation_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --summary-output reports/stage5d_review_summary.json --report-output reports/stage5d_review_report.md
 ```
 
 输出：
@@ -81,6 +81,16 @@ python scripts/build_stage5d_review_report.py --review-records data_review/stage
 - `reports/stage5d_review_report.md`
 
 报告用于检查 review records、accepted revisions、rejection-sampling 候选和 same-plot preference 候选的数量与比例。它只能说明 Stage 5D 数据构建状态，不能替代 sealed evaluation、作者盲审或 paired eval。
+
+## Stage 5E 入场检查
+
+Stage 5E 只能在 Stage 5D 证据通过入场检查后开始：
+
+```powershell
+python scripts/check_stage5e_entry.py --summary reports/stage5d_review_summary.json --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --generation-records outputs/stage5d_generation_records.jsonl --output reports/stage5e_entry_check.json
+```
+
+通过条件：报告包含缺陷密度、作者接受率、编辑负担、候选行数和 plan-execution regression；rejection-sampling SFT 候选只来自 train split；accepted 作者修订能追溯到同 card、同 StyleContract、同 prompt hash、同 seed 的生成记录；存在作者、人审或盲审接受数据。
 
 ## Stage 5D 不证明什么
 
