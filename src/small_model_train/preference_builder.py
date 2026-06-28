@@ -161,5 +161,7 @@ def _validate_review_record_provenance(
 ) -> None:
     record_id = review_record["record_id"]
     for field in REVIEW_RECORD_PROVENANCE_FIELDS:
-        if field in review_record and review_record[field] != revision[field]:
+        if field not in review_record:
+            raise ValueError(f"review record provenance missing: {record_id} {field}")
+        if review_record[field] != revision[field]:
             raise ValueError(f"review record provenance mismatch: {record_id} {field}")

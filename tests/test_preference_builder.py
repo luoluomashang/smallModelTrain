@@ -218,6 +218,11 @@ def test_build_same_plot_preference_candidates_includes_defect_labels():
         review_records=[
             {
                 "record_id": "review-c1-001",
+                "card_id": "card-c1-v1",
+                "chapter_id": "c1",
+                "style_contract_id": "contract-v1",
+                "style_contract_sha256": "a" * 64,
+                "raw_output_sha256": text_sha256(MODEL_OUTPUT),
                 "defects": [
                     {"label": "generic_phrase"},
                     {"label": "dialogue_flatness"},
@@ -236,6 +241,26 @@ def test_build_same_plot_preference_candidates_rejects_missing_defect_record():
         build_same_plot_preference_candidates(
             [_same_plot_revision(defect_record_ids=["review-c1-404"])],
             review_records=[],
+        )
+
+
+def test_build_same_plot_preference_candidates_rejects_missing_review_provenance():
+    with pytest.raises(
+        ValueError,
+        match="review record provenance missing: review-c1-001 card_id",
+    ):
+        build_same_plot_preference_candidates(
+            [_same_plot_revision(defect_record_ids=["review-c1-001"])],
+            review_records=[
+                {
+                    "record_id": "review-c1-001",
+                    "chapter_id": "c1",
+                    "style_contract_id": "contract-v1",
+                    "style_contract_sha256": "a" * 64,
+                    "raw_output_sha256": text_sha256(MODEL_OUTPUT),
+                    "defects": [{"label": "generic_phrase"}],
+                }
+            ],
         )
 
 
