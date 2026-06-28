@@ -153,7 +153,7 @@ formal 成功标志：每个 train/A 章节恰好有一张 `card_status` 为 `ap
 
 Stage 5D 在 formal admission 先补齐重复 trainable chapter id，以及 manifest 中重复 card_id/chapter_id key 导致 card_hashes/chapter_hashes 静默覆盖的风险检查，然后把作者 same-plot 修订转成候选数据。AI 味 review records 写入 `data_review/stage5d_review_records.jsonl`，作者修订写入 `data_review/stage5d_revisions.jsonl`。accepted 修订可以构建 `data_sft/stage5d_rejection_sampling_sft.jsonl`；合法 same-plot chosen/rejected 对可以构建 `data_pref/stage5d_same_plot_preference.jsonl`，并且 `scripts/build_same_plot_preference_dataset.py` 必须通过 `--review-records data_review/stage5d_review_records.jsonl` 解析缺陷标签。
 
-Stage 5D 报告由 `scripts/build_stage5d_review_report.py` 构建，并通过 `--raw-outputs outputs/stage5d_generation_records.jsonl` 读取原始生成记录。Stage 5E 开始前必须运行 `scripts/check_stage5e_entry.py`，只有 `reports/stage5e_entry_check.json` 中 `"passed": true` 才能进入 Stage 5E 规划。
+Stage 5D 报告由 `scripts/build_stage5d_review_report.py` 构建，并通过 `--raw-outputs outputs/stage5d_generation_records.jsonl` 读取原始生成记录。Stage 5E 开始前必须运行 `scripts/check_stage5e_entry.py`，只有 `reports/stage5e_entry_check.json` 中 `"passed": true`，并且完整 `python -m pytest` 通过后，才能进入 Stage 5E 规划。
 
 注意：Stage 5D 的 preference rows 只是候选数据，不是 DPO、SimPO、ORPO、KTO，也不表示已经运行 reward model training 或 preference optimization。Stage 5D 报告和 Stage 5E 入场检查只能说明作者反馈数据和候选行是否可追溯，不能证明模型质量已经改善或允许扩大到 100/500 条正式训练。
 
@@ -316,4 +316,4 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - Stage 5A：证据链修正，要求 preflight JSON、raw-first eval、raw scoring、manifest 和 draft/formal 卡门禁可追踪。
 - Stage 5B：StyleContract 闭环，formal SFT 必须绑定 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，`style_contract.md` 只用于人工审阅。
 - Stage 5C：正式 `ChapterExecutionCard` 和数据完整性闭环，formal SFT 使用 `card_status` 为 `approved` 或 `frozen` 的卡并写出 dataset manifest。
-- Stage 5D：先补齐 formal admission 重复 trainable chapter id，以及 manifest 中重复 card_id/chapter_id key 导致 card_hashes/chapter_hashes 静默覆盖的风险检查，再记录 AI 味缺陷、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选；不运行 DPO、SimPO、ORPO、KTO 或偏好优化训练。Stage 5E 只能在 `scripts/check_stage5e_entry.py` 通过后开始。
+- Stage 5D：先补齐 formal admission 重复 trainable chapter id，以及 manifest 中重复 card_id/chapter_id key 导致 card_hashes/chapter_hashes 静默覆盖的风险检查，再记录 AI 味缺陷、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选；不运行 DPO、SimPO、ORPO、KTO 或偏好优化训练。Stage 5E 只能在 `scripts/check_stage5e_entry.py` 通过，并且完整 `python -m pytest` 通过后开始。

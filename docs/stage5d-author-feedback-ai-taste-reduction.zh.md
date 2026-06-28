@@ -84,7 +84,7 @@ python scripts/build_stage5d_review_report.py --review-records data_review/stage
 
 ## Stage 5E 入场检查
 
-Stage 5E 只能在 Stage 5D 证据通过入场检查后开始：
+Stage 5E 只能在 Stage 5D 证据通过入场检查，并且完整 `python -m pytest` 通过后开始：
 
 ```powershell
 python scripts/check_stage5e_entry.py --summary reports/stage5d_review_summary.json --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --generation-records outputs/stage5d_generation_records.jsonl --output reports/stage5e_entry_check.json
