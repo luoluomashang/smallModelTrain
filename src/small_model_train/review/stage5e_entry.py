@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+from small_model_train.review.evidence import validate_review_record
+from small_model_train.review.revision_records import (
+    ACCEPTED_REVISION_STATUSES,
+    validate_revision_record,
+)
+from small_model_train.schemas.chapter_execution_card import text_sha256
 
 
 ENTRY = "stage5e_controlled_experimentation"
 BOUNDARY = "candidate_data_only_no_preference_training"
-ACCEPTED_REVISION_STATUSES = {"accepted", "accepted_with_minor_edits"}
 HUMAN_REVIEW_SOURCES = {"author", "human", "blind_review"}
+LOWER_HEX_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_SUMMARY_FIELDS = (
     "reviewed_outputs",
     "reviewed_output_chars",
@@ -20,12 +28,55 @@ REQUIRED_SUMMARY_FIELDS = (
     "plan_execution_regressions",
     "boundary",
 )
-GENERATION_LINK_FIELDS = (
+REVISION_GENERATION_REQUIRED_FIELDS = (
     "card_id",
     "style_contract_sha256",
     "prompt_sha256",
     "raw_output_sha256",
 )
+REJECTION_SAMPLING_REQUIRED_FIELDS = (
+    "instruction",
+    "input",
+    "output",
+    "revision_id",
+    "card_id",
+    "chapter_id",
+    "style_contract_sha256",
+    "raw_output_sha256",
+    "source_split",
+)
+REJECTION_SAMPLING_REVISION_FIELDS = (
+    ("revision_id", "revision_id"),
+    ("card_id", "card_id"),
+    ("chapter_id", "chapter_id"),
+    ("style_contract_sha256", "style_contract_sha256"),
+    ("raw_output_sha256", "raw_output_sha256"),
+    ("output", "revised_output"),
+)
+PREFERENCE_REQUIRED_FIELDS = (
+    "id",
+    "prompt_sha256",
+    "card_id",
+    "chapter_id",
+    "style_contract_sha256",
+    "chosen",
+    "rejected",
+    "defect_record_ids",
+    "defect_labels",
+    "reject_type",
+    "source",
+)
+PREFERENCE_REVISION_FIELDS = (
+    ("id", "revision_id"),
+    ("prompt_sha256", "prompt_sha256"),
+    ("card_id", "card_id"),
+    ("chapter_id", "chapter_id"),
+    ("style_contract_sha256", "style_contract_sha256"),
+    ("chosen", "revised_output"),
+    ("rejected", "model_output"),
+    ("defect_record_ids", "defect_record_ids"),
+)
+SAME_PLOT_PREFERENCE_SOURCE = "stage5d_same_plot_revision"
 
 
 def check_stage5e_entry(
@@ -39,18 +90,43 @@ def check_stage5e_entry(
 ) -> dict[str, Any]:
     errors: list[str] = []
 
+    generations = _validate_generation_records(generation_records, errors)
+    revisions = _validate_revision_records(revision_records, errors)
+    accepted_revisions = [
+        revision
+        for revision in revisions
+        if revision["revision_status"] in ACCEPTED_REVISION_STATUSES
+    ]
+    accepted_by_id = _accepted_revisions_by_id(accepted_revisions, errors)
+    reviews = _validate_review_records(
+        review_records,
+        raw_outputs=_raw_outputs_by_source_id(generations),
+        errors=errors,
+    )
+
     _check_summary(
         summary,
         review_records=review_records,
         revision_records=revision_records,
+        accepted_revision_count=len(accepted_revisions),
         rejection_sampling_rows=rejection_sampling_rows,
         preference_rows=preference_rows,
         errors=errors,
     )
-    _check_review_records(review_records, errors)
-    _check_rejection_sampling_rows(summary, rejection_sampling_rows, errors)
-    _check_preference_rows(summary, preference_rows, errors)
-    _check_accepted_revisions(revision_records, generation_records, errors)
+    _check_review_records(reviews, errors)
+    _check_rejection_sampling_rows(
+        summary,
+        rejection_sampling_rows,
+        accepted_by_id=accepted_by_id,
+        errors=errors,
+    )
+    _check_preference_rows(
+        summary,
+        preference_rows,
+        accepted_by_id=accepted_by_id,
+        errors=errors,
+    )
+    _check_accepted_generation_links(accepted_revisions, generations, errors)
 
     return {"passed": not errors, "errors": errors, "entry": ENTRY}
 
@@ -60,6 +136,7 @@ def _check_summary(
     *,
     review_records: list[dict[str, Any]],
     revision_records: list[dict[str, Any]],
+    accepted_revision_count: int,
     rejection_sampling_rows: list[dict[str, Any]],
     preference_rows: list[dict[str, Any]],
     errors: list[str],
@@ -96,7 +173,7 @@ def _check_summary(
     _check_summary_count(
         summary,
         "accepted_revisions",
-        _accepted_revision_count(revision_records),
+        accepted_revision_count,
         "accepted revisions",
         errors,
     )
@@ -132,14 +209,198 @@ def _check_summary(
         errors.append(f"non-train rejection-sampling rows block Stage 5E: {blocker_ids}")
 
 
-def _check_review_records(review_records: list[dict[str, Any]], errors: list[str]) -> None:
+def _validate_revision_records(
+    revision_records: list[dict[str, Any]],
+    errors: list[str],
+) -> list[dict[str, Any]]:
+    if not isinstance(revision_records, list):
+        errors.append("revision records must be a list")
+        return []
+
+    revisions: list[dict[str, Any]] = []
+    for index, row in enumerate(revision_records, start=1):
+        row_id = _row_id(row, index)
+        if not isinstance(row, dict):
+            errors.append(f"revision record invalid: {row_id} revision record must be a JSON object")
+            continue
+        if row.get("revision_status") in ACCEPTED_REVISION_STATUSES:
+            _check_accepted_revision_link_fields(row, index, errors)
+        try:
+            revisions.append(validate_revision_record(row))
+        except ValueError as exc:
+            errors.append(f"revision record invalid: {row_id} {exc}")
+    return revisions
+
+
+def _check_accepted_revision_link_fields(
+    revision: dict[str, Any],
+    index: int,
+    errors: list[str],
+) -> None:
+    revision_id = _row_id(revision, index)
+    for field in REVISION_GENERATION_REQUIRED_FIELDS:
+        if not _non_empty_string(revision.get(field)):
+            errors.append(f"accepted revision missing generation link field: {revision_id} {field}")
+
+
+def _accepted_revisions_by_id(
+    accepted_revisions: list[dict[str, Any]],
+    errors: list[str],
+) -> dict[str, dict[str, Any]]:
+    accepted_by_id: dict[str, dict[str, Any]] = {}
+    for revision in accepted_revisions:
+        revision_id = revision["revision_id"]
+        if revision_id in accepted_by_id:
+            errors.append(f"duplicate accepted revision id: {revision_id}")
+            continue
+        accepted_by_id[revision_id] = revision
+    return accepted_by_id
+
+
+def _validate_generation_records(
+    generation_records: list[dict[str, Any]],
+    errors: list[str],
+) -> list[dict[str, Any]]:
+    if not isinstance(generation_records, list):
+        errors.append("generation records must be a list")
+        return []
+
+    generations: list[dict[str, Any]] = []
+    for index, row in enumerate(generation_records, start=1):
+        if not isinstance(row, dict):
+            errors.append(f"generation record must be a JSON object: row-{index}")
+            continue
+
+        row_id = _generation_row_id(row, index)
+        source_id = _first_non_empty_string(row, ("card_id", "source_output_id", "id"))
+        prompt_sha256 = row.get("prompt_sha256")
+        raw_output = _generation_raw_output(row)
+        seed = _generation_seed(row)
+        style_contract_sha256 = row.get("style_contract_sha256")
+        raw_output_sha256 = _generation_raw_output_sha256(
+            row,
+            row_id=row_id,
+            raw_output=raw_output,
+            errors=errors,
+        )
+
+        valid = True
+        if source_id is None:
+            valid = False
+            errors.append(f"generation record missing source id: {row_id}")
+        if not _is_lower_hex_sha256(prompt_sha256):
+            valid = False
+            if _non_empty_string(prompt_sha256):
+                errors.append(f"generation record invalid prompt_sha256: {row_id}")
+            else:
+                errors.append(f"generation record missing prompt_sha256: {row_id}")
+        if raw_output is None:
+            valid = False
+            errors.append(f"generation record missing raw output: {row_id}")
+        if raw_output_sha256 is None:
+            valid = False
+        if not _is_int_seed(seed):
+            valid = False
+            errors.append(f"generation record missing integer seed: {row_id}")
+        if style_contract_sha256 is not None and not _is_lower_hex_sha256(style_contract_sha256):
+            valid = False
+            errors.append(f"generation record invalid style_contract_sha256: {row_id}")
+
+        if valid:
+            generations.append(
+                {
+                    "row_id": row_id,
+                    "source_id": source_id,
+                    "prompt_sha256": prompt_sha256,
+                    "raw_output": raw_output,
+                    "raw_output_sha256": raw_output_sha256,
+                    "seed": seed,
+                    "style_contract_sha256": style_contract_sha256,
+                }
+            )
+    return generations
+
+
+def _generation_raw_output_sha256(
+    row: dict[str, Any],
+    *,
+    row_id: str,
+    raw_output: str | None,
+    errors: list[str],
+) -> str | None:
+    explicit_hash = row.get("raw_output_sha256")
+    if explicit_hash is not None and not _is_lower_hex_sha256(explicit_hash):
+        errors.append(f"generation record invalid raw_output_sha256: {row_id}")
+        return None
+    if raw_output is None:
+        return None
+
+    computed_hash = text_sha256(raw_output)
+    if explicit_hash is None:
+        return computed_hash
+    if explicit_hash != computed_hash:
+        errors.append(f"generation record raw_output_sha256 mismatch: {row_id}")
+        return None
+    return explicit_hash
+
+
+def _generation_raw_output(row: dict[str, Any]) -> str | None:
+    for field in ("raw_output", "output"):
+        value = row.get(field)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _generation_seed(row: dict[str, Any]) -> Any:
+    if "seed" in row:
+        return row.get("seed")
+    params = row.get("params")
+    if isinstance(params, dict) and "seed" in params:
+        return params.get("seed")
+    return None
+
+
+def _raw_outputs_by_source_id(generations: list[dict[str, Any]]) -> dict[str, str]:
+    raw_outputs: dict[str, str] = {}
+    for generation in generations:
+        raw_outputs[generation["source_id"]] = generation["raw_output"]
+    return raw_outputs
+
+
+def _validate_review_records(
+    review_records: list[dict[str, Any]],
+    *,
+    raw_outputs: dict[str, str],
+    errors: list[str],
+) -> list[dict[str, Any]]:
     if not isinstance(review_records, list):
         errors.append("review records must be a list")
-        return
+        return []
 
-    for record in review_records:
+    reviews: list[dict[str, Any]] = []
+    for index, record in enumerate(review_records, start=1):
+        record_id = _review_row_id(record, index)
         if not isinstance(record, dict):
+            errors.append(f"review record invalid: {record_id} review record must be a JSON object")
             continue
+
+        source_output_id = record.get("source_output_id")
+        raw_output = raw_outputs.get(source_output_id)
+        if raw_output is None:
+            errors.append(
+                f"review record invalid: {record_id} raw output not found for source_output_id: {source_output_id}"
+            )
+            continue
+        try:
+            reviews.append(validate_review_record(record, raw_output=raw_output))
+        except ValueError as exc:
+            errors.append(f"review record invalid: {record_id} {exc}")
+    return reviews
+
+
+def _check_review_records(review_records: list[dict[str, Any]], errors: list[str]) -> None:
+    for record in review_records:
         review_source = str(record.get("review_source") or "").strip()
         reviewer = str(record.get("reviewer") or "").strip()
         acceptance = record.get("overall_acceptance")
@@ -155,6 +416,8 @@ def _check_review_records(review_records: list[dict[str, Any]], errors: list[str
 def _check_rejection_sampling_rows(
     summary: dict[str, Any],
     rejection_sampling_rows: list[dict[str, Any]],
+    *,
+    accepted_by_id: dict[str, dict[str, Any]],
     errors: list[str],
 ) -> None:
     if _number(_summary_value(summary, "rejection_sampling_sft_rows")) <= 0:
@@ -171,16 +434,32 @@ def _check_rejection_sampling_rows(
         if not isinstance(row, dict):
             errors.append(f"rejection-sampling row must be a JSON object: row-{index}")
             continue
+
+        row_id = _row_id(row, index)
+        for field in REJECTION_SAMPLING_REQUIRED_FIELDS:
+            if not _non_empty_string(row.get(field)):
+                errors.append(f"rejection-sampling row missing required field: {row_id} {field}")
+
         if row.get("source_split") != "train":
-            errors.append(
-                "rejection-sampling row source_split must be train: "
-                + _row_id(row, index)
-            )
+            errors.append("rejection-sampling row source_split must be train: " + row_id)
+
+        revision = accepted_by_id.get(row.get("revision_id"))
+        if revision is None:
+            errors.append(f"rejection-sampling row not linked to accepted revision: {row_id}")
+            continue
+
+        for row_field, revision_field in REJECTION_SAMPLING_REVISION_FIELDS:
+            if row.get(row_field) != revision[revision_field]:
+                errors.append(
+                    f"rejection-sampling row mismatch accepted revision: {row_id} {row_field}"
+                )
 
 
 def _check_preference_rows(
     summary: dict[str, Any],
     preference_rows: list[dict[str, Any]],
+    *,
+    accepted_by_id: dict[str, dict[str, Any]],
     errors: list[str],
 ) -> None:
     missing_candidate_error_added = False
@@ -198,116 +477,75 @@ def _check_preference_rows(
 
     for index, row in enumerate(preference_rows, start=1):
         if not isinstance(row, dict):
-            errors.append(f"preference row requires non-empty defect_labels: row-{index}")
+            errors.append(f"preference row must be a JSON object: row-{index}")
             continue
+
+        row_id = _row_id(row, index)
+        for field in PREFERENCE_REQUIRED_FIELDS:
+            if field in ("defect_record_ids", "defect_labels"):
+                if not _non_empty_string_list(row.get(field)):
+                    errors.append(f"preference row requires non-empty {field}: {row_id}")
+            elif not _non_empty_string(row.get(field)):
+                errors.append(f"preference row missing required field: {row_id} {field}")
+
+        if row.get("source") != SAME_PLOT_PREFERENCE_SOURCE:
+            errors.append(f"preference row source must be {SAME_PLOT_PREFERENCE_SOURCE}: {row_id}")
+
+        revision = accepted_by_id.get(row.get("id"))
+        if revision is None:
+            errors.append(f"preference row not linked to accepted revision: {row_id}")
+            continue
+
+        for row_field, revision_field in PREFERENCE_REVISION_FIELDS:
+            if row.get(row_field) != revision[revision_field]:
+                errors.append(f"preference row mismatch accepted revision: {row_id} {row_field}")
+
         defect_labels = row.get("defect_labels")
-        if not _non_empty_string_list(defect_labels):
-            errors.append(
-                "preference row requires non-empty defect_labels: "
-                + _row_id(row, index)
-            )
+        if _non_empty_string_list(defect_labels) and row.get("reject_type") != ",".join(defect_labels):
+            errors.append(f"preference row mismatch accepted revision: {row_id} reject_type")
 
 
-def _check_accepted_revisions(
-    revision_records: list[dict[str, Any]],
-    generation_records: list[dict[str, Any]],
+def _check_accepted_generation_links(
+    accepted_revisions: list[dict[str, Any]],
+    generations: list[dict[str, Any]],
     errors: list[str],
 ) -> None:
-    if not isinstance(revision_records, list):
-        errors.append("revision records must be a list")
-        return
-
-    accepted_revisions = _accepted_revisions(revision_records)
     if not accepted_revisions:
         errors.append("at least one accepted revision is required before Stage 5E")
         return
 
-    generation_keys = _validated_generation_keys(generation_records, errors)
-    for index, revision in enumerate(accepted_revisions, start=1):
-        if not _accepted_revision_has_link_fields(revision, index, errors):
-            continue
-        if _generation_key(revision) not in generation_keys:
+    for revision in accepted_revisions:
+        revision_id = revision["revision_id"]
+        linked = False
+        for generation in generations:
+            if not _generation_matches_revision_core(generation, revision):
+                continue
+            generation_style = generation.get("style_contract_sha256")
+            if generation_style is not None and generation_style != revision["style_contract_sha256"]:
+                errors.append(
+                    "generation record style_contract_sha256 mismatch accepted revision: "
+                    f"{generation['row_id']} {revision_id}"
+                )
+                continue
+            linked = True
+            break
+
+        if not linked:
             errors.append(
                 "accepted revision lacks same-card same-style same-seed generation record: "
-                + _row_id(revision, index)
+                + revision_id
             )
 
 
-def _validated_generation_keys(
-    generation_records: list[dict[str, Any]],
-    errors: list[str],
-) -> set[tuple[Any, ...]]:
-    if not isinstance(generation_records, list):
-        errors.append("generation records must be a list")
-        return set()
-
-    keys: set[tuple[Any, ...]] = set()
-    for index, row in enumerate(generation_records, start=1):
-        if not isinstance(row, dict):
-            errors.append(f"generation record must be a JSON object: row-{index}")
-            continue
-
-        has_link_fields = True
-        row_id = _row_id(row, index)
-        for field in GENERATION_LINK_FIELDS:
-            if not _non_empty_string(row.get(field)):
-                has_link_fields = False
-                errors.append(f"generation record missing link field: {row_id} {field}")
-
-        has_seed = _is_int_seed(row.get("seed"))
-        if not has_seed:
-            errors.append(f"generation record missing integer seed: {row_id}")
-
-        if has_link_fields and has_seed:
-            keys.add(_generation_key(row))
-    return keys
-
-
-def _accepted_revision_has_link_fields(
+def _generation_matches_revision_core(
+    generation: dict[str, Any],
     revision: dict[str, Any],
-    index: int,
-    errors: list[str],
 ) -> bool:
-    has_link_fields = True
-    revision_id = _row_id(revision, index)
-    for field in GENERATION_LINK_FIELDS:
-        if not _non_empty_string(revision.get(field)):
-            has_link_fields = False
-            errors.append(f"accepted revision missing generation link field: {revision_id} {field}")
-    return has_link_fields
-
-
-def _generation_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return (
-        row.get("card_id"),
-        row.get("style_contract_sha256"),
-        row.get("prompt_sha256"),
-        row.get("raw_output_sha256"),
+        generation["source_id"] == revision["card_id"]
+        and generation["prompt_sha256"] == revision["prompt_sha256"]
+        and generation["raw_output_sha256"] == revision["raw_output_sha256"]
     )
-
-
-def _row_id(row: dict[str, Any], index: int) -> str:
-    return str(row.get("revision_id") or row.get("id") or f"row-{index}")
-
-
-def _row_count(rows: Any) -> int:
-    if isinstance(rows, list):
-        return len(rows)
-    return 0
-
-
-def _accepted_revisions(rows: Any) -> list[dict[str, Any]]:
-    if not isinstance(rows, list):
-        return []
-    return [
-        row
-        for row in rows
-        if isinstance(row, dict) and row.get("revision_status") in ACCEPTED_REVISION_STATUSES
-    ]
-
-
-def _accepted_revision_count(rows: Any) -> int:
-    return len(_accepted_revisions(rows))
 
 
 def _check_summary_count(
@@ -325,6 +563,44 @@ def _check_summary_count(
 def _summary_value(summary: Any, field: str) -> Any:
     if isinstance(summary, dict):
         return summary.get(field)
+    return None
+
+
+def _row_count(rows: Any) -> int:
+    if isinstance(rows, list):
+        return len(rows)
+    return 0
+
+
+def _row_id(row: Any, index: int) -> str:
+    if isinstance(row, dict):
+        for field in ("revision_id", "id", "record_id"):
+            value = row.get(field)
+            if _non_empty_string(value):
+                return str(value)
+    return f"row-{index}"
+
+
+def _review_row_id(row: Any, index: int) -> str:
+    if isinstance(row, dict):
+        value = row.get("record_id")
+        if _non_empty_string(value):
+            return str(value)
+    return _row_id(row, index)
+
+
+def _generation_row_id(row: dict[str, Any], index: int) -> str:
+    value = _first_non_empty_string(row, ("card_id", "source_output_id", "id"))
+    if value is not None:
+        return value
+    return f"row-{index}"
+
+
+def _first_non_empty_string(row: dict[str, Any], fields: tuple[str, ...]) -> str | None:
+    for field in fields:
+        value = row.get(field)
+        if _non_empty_string(value):
+            return str(value)
     return None
 
 
@@ -346,6 +622,10 @@ def _non_empty_string_list(value: Any) -> bool:
 
 def _non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _is_lower_hex_sha256(value: Any) -> bool:
+    return isinstance(value, str) and LOWER_HEX_SHA256_RE.fullmatch(value) is not None
 
 
 def _is_int_seed(value: Any) -> bool:

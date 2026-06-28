@@ -8,6 +8,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "check_stage5e_entry.py"
+MODEL_OUTPUT = "林默把合同推过去，对方沉默。"
+REVISED_OUTPUT = "林默没有解释，只把合同推到桌面。岳家的人第一次停住。"
+PROMPT_SHA256 = "b" * 64
+STYLE_CONTRACT_SHA256 = "a" * 64
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -48,53 +52,108 @@ def _summary(**overrides: object) -> dict:
 
 
 def _review(**overrides: object) -> dict:
+    from small_model_train.schemas.chapter_execution_card import text_sha256
+
+    evidence_text = "对方沉默"
+    evidence_start = MODEL_OUTPUT.find(evidence_text)
     record = {
         "record_id": "review-1",
+        "schema_version": 1,
+        "card_id": "card-c1-v1",
+        "chapter_id": "c1",
+        "style_contract_id": "contract-v1",
+        "style_contract_sha256": STYLE_CONTRACT_SHA256,
+        "source_output_id": "card-c1-v1",
+        "raw_output_sha256": text_sha256(MODEL_OUTPUT),
         "review_source": "author",
         "reviewer": "author",
+        "reviewed_at": "2026-06-27T01:00:00Z",
+        "defects": [
+            {
+                "label": "generic_phrase",
+                "severity": "minor",
+                "evidence_text": evidence_text,
+                "evidence_start": evidence_start,
+                "evidence_end": evidence_start + len(evidence_text),
+                "suggested_fix": "换成具体动作反应。",
+            }
+        ],
         "overall_acceptance": "accepted",
+        "notes": "同剧情人工复核通过。",
     }
     record.update(overrides)
     return record
 
 
 def _revision(**overrides: object) -> dict:
+    from small_model_train.schemas.chapter_execution_card import text_sha256
+
     revision = {
-        "revision_id": "rev-1",
+        "revision_id": "rev-c1-001",
+        "schema_version": 1,
         "revision_status": "accepted",
-        "card_id": "card-1",
-        "chapter_id": "chapter-1",
-        "style_contract_sha256": "a" * 64,
-        "prompt_sha256": "b" * 64,
-        "raw_output_sha256": "c" * 64,
+        "card_id": "card-c1-v1",
+        "chapter_id": "c1",
+        "style_contract_id": "contract-v1",
+        "style_contract_sha256": STYLE_CONTRACT_SHA256,
+        "prompt_sha256": PROMPT_SHA256,
+        "raw_output_sha256": text_sha256(MODEL_OUTPUT),
+        "model_output": MODEL_OUTPUT,
+        "revised_output": REVISED_OUTPUT,
+        "revision_author": "author",
+        "revised_at": "2026-06-27T01:00:00Z",
+        "edit_summary": "把解释改成动作和反应。",
+        "defect_record_ids": ["review-1"],
+        "acceptance_reason": "同剧情更像作者正文。",
     }
     revision.update(overrides)
     return revision
 
 
 def _generation(**overrides: object) -> dict:
-    generation = {
-        "id": "gen-1",
-        "card_id": "card-1",
-        "style_contract_sha256": "a" * 64,
-        "prompt_sha256": "b" * 64,
-        "raw_output_sha256": "c" * 64,
-        "seed": 314159,
-        "model_role": "author_candidate",
-        "generation_params_sha256": "d" * 64,
-    }
+    from small_model_train.stage2_inference import build_generation_row
+
+    generation = build_generation_row(
+        "card-c1-v1",
+        MODEL_OUTPUT,
+        "sft_v1",
+        {"seed": 7},
+        prompt_sha256=PROMPT_SHA256,
+    )
     generation.update(overrides)
     return generation
 
 
 def _rs_row(**overrides: object) -> dict:
-    row = {"revision_id": "rev-1", "source_split": "train"}
+    row = {
+        "instruction": "续写下一章。",
+        "input": "章节执行卡内容",
+        "output": REVISED_OUTPUT,
+        "revision_id": "rev-c1-001",
+        "card_id": "card-c1-v1",
+        "chapter_id": "c1",
+        "style_contract_sha256": STYLE_CONTRACT_SHA256,
+        "raw_output_sha256": _revision()["raw_output_sha256"],
+        "source_split": "train",
+    }
     row.update(overrides)
     return row
 
 
 def _preference_row(**overrides: object) -> dict:
-    row = {"id": "pref-1", "defect_labels": ["generic_phrase"]}
+    row = {
+        "id": "rev-c1-001",
+        "prompt_sha256": PROMPT_SHA256,
+        "card_id": "card-c1-v1",
+        "chapter_id": "c1",
+        "style_contract_sha256": STYLE_CONTRACT_SHA256,
+        "chosen": REVISED_OUTPUT,
+        "rejected": MODEL_OUTPUT,
+        "defect_record_ids": ["review-1"],
+        "defect_labels": ["generic_phrase"],
+        "reject_type": "generic_phrase",
+        "source": "stage5d_same_plot_revision",
+    }
     row.update(overrides)
     return row
 
@@ -148,7 +207,7 @@ def test_stage5e_entry_gate_rejects_missing_seeded_generation_link():
 
     assert result["passed"] is False
     assert (
-        "accepted revision lacks same-card same-style same-seed generation record: rev-1"
+        "accepted revision lacks same-card same-style same-seed generation record: rev-c1-001"
         in result["errors"]
     )
 
@@ -167,7 +226,7 @@ def test_stage5e_entry_gate_rejects_accepted_revision_missing_link_field():
 
     assert result["passed"] is False
     assert (
-        "accepted revision missing generation link field: rev-1 prompt_sha256"
+        "accepted revision missing generation link field: rev-c1-001 prompt_sha256"
         in result["errors"]
     )
 
@@ -185,11 +244,8 @@ def test_stage5e_entry_gate_rejects_generation_record_with_only_seed():
     )
 
     assert result["passed"] is False
-    assert "generation record missing link field: gen-seed-only card_id" in result["errors"]
-    assert (
-        "generation record missing link field: gen-seed-only style_contract_sha256"
-        in result["errors"]
-    )
+    assert "generation record missing prompt_sha256: gen-seed-only" in result["errors"]
+    assert "generation record missing raw output: gen-seed-only" in result["errors"]
 
 
 def test_stage5e_entry_gate_reports_malformed_generation_row_direct_errors():
@@ -225,7 +281,143 @@ def test_stage5e_entry_gate_rejects_preference_rows_without_defect_labels():
     )
 
     assert result["passed"] is False
-    assert "preference row requires non-empty defect_labels: pref-1" in result["errors"]
+    assert "preference row requires non-empty defect_labels: rev-c1-001" in result["errors"]
+
+
+def test_stage5e_entry_gate_rejects_minimal_rejection_sampling_row():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[{"source_split": "train"}],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "rejection-sampling row missing required field: row-1 revision_id" in result["errors"]
+    assert "rejection-sampling row not linked to accepted revision: row-1" in result["errors"]
+
+
+def test_stage5e_entry_gate_rejects_minimal_preference_row():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[{"defect_labels": ["generic_phrase"]}],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "preference row missing required field: row-1 id" in result["errors"]
+    assert "preference row not linked to accepted revision: row-1" in result["errors"]
+
+
+def test_stage5e_entry_gate_rejects_generation_raw_hash_mismatch():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation(raw_output_sha256="c" * 64)],
+    )
+
+    assert result["passed"] is False
+    assert "generation record raw_output_sha256 mismatch: card-c1-v1" in result["errors"]
+
+
+def test_stage5e_entry_gate_rejects_invalid_revision_schema():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(accepted_revisions=0),
+        review_records=[_review()],
+        revision_records=[_revision(raw_output_sha256="not-a-sha")],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "revision record invalid: rev-c1-001 raw_output_sha256 must be a 64-character lowercase hex string"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_rejection_sampling_row_not_linked_to_revision():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row(revision_id="rev-other")],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "rejection-sampling row not linked to accepted revision: rev-other" in result["errors"]
+
+
+def test_stage5e_entry_gate_rejects_rejection_sampling_field_mismatch():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row(output="不是修订正文")],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "rejection-sampling row mismatch accepted revision: rev-c1-001 output"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_preference_row_not_linked_to_revision():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row(id="rev-other")],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "preference row not linked to accepted revision: rev-other" in result["errors"]
+
+
+def test_stage5e_entry_gate_rejects_preference_field_mismatch():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row(chosen="不是修订正文")],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "preference row mismatch accepted revision: rev-c1-001 chosen" in result["errors"]
 
 
 def test_stage5e_entry_gate_rejects_summary_preference_count_mismatch():
