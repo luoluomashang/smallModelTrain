@@ -44,6 +44,11 @@ def _review_records():
     return [
         {
             "record_id": "review-c1-001",
+            "card_id": "card-c1-v1",
+            "chapter_id": "c1",
+            "style_contract_id": "contract-v1",
+            "style_contract_sha256": "a" * 64,
+            "raw_output_sha256": text_sha256(MODEL_OUTPUT),
             "defects": [
                 {"label": "generic_phrase"},
                 {"label": "dialogue_flatness"},
@@ -51,7 +56,12 @@ def _review_records():
         },
         {
             "record_id": "review-c1-002",
-            "defects": [{"label": "ai_trace"}],
+            "card_id": "card-c1-v1",
+            "chapter_id": "c1",
+            "style_contract_id": "contract-v1",
+            "style_contract_sha256": "a" * 64,
+            "raw_output_sha256": text_sha256(MODEL_OUTPUT),
+            "defects": [{"label": "payoff_blur"}],
         },
     ]
 
@@ -195,8 +205,8 @@ def test_build_same_plot_preference_candidates_uses_accepted_revision():
             "chosen": REVISED_OUTPUT,
             "rejected": MODEL_OUTPUT,
             "defect_record_ids": ["review-c1-001", "review-c1-002"],
-            "defect_labels": ["ai_trace", "dialogue_flatness", "generic_phrase"],
-            "reject_type": "ai_trace,dialogue_flatness,generic_phrase",
+            "defect_labels": ["dialogue_flatness", "generic_phrase", "payoff_blur"],
+            "reject_type": "dialogue_flatness,generic_phrase,payoff_blur",
             "source": "stage5d_same_plot_revision",
         }
     ]
@@ -226,6 +236,57 @@ def test_build_same_plot_preference_candidates_rejects_missing_defect_record():
         build_same_plot_preference_candidates(
             [_same_plot_revision(defect_record_ids=["review-c1-404"])],
             review_records=[],
+        )
+
+
+def test_build_same_plot_preference_candidates_rejects_mismatched_review_provenance():
+    with pytest.raises(
+        ValueError,
+        match="review record provenance mismatch: review-c1-001 card_id",
+    ):
+        build_same_plot_preference_candidates(
+            [_same_plot_revision(defect_record_ids=["review-c1-001"])],
+            review_records=[
+                {
+                    "record_id": "review-c1-001",
+                    "card_id": "other-card",
+                    "chapter_id": "c1",
+                    "style_contract_id": "contract-v1",
+                    "style_contract_sha256": "a" * 64,
+                    "raw_output_sha256": text_sha256(MODEL_OUTPUT),
+                    "defects": [{"label": "generic_phrase"}],
+                }
+            ],
+        )
+
+
+def test_build_same_plot_preference_candidates_rejects_duplicate_review_record_id():
+    with pytest.raises(ValueError, match="duplicate review record id: review-c1-001"):
+        build_same_plot_preference_candidates(
+            [_same_plot_revision(defect_record_ids=["review-c1-001"])],
+            review_records=[
+                {
+                    "record_id": "review-c1-001",
+                    "defects": [{"label": "generic_phrase"}],
+                },
+                {
+                    "record_id": "review-c1-001",
+                    "defects": [{"label": "dialogue_flatness"}],
+                },
+            ],
+        )
+
+
+def test_build_same_plot_preference_candidates_rejects_unknown_defect_label():
+    with pytest.raises(ValueError, match="defect label is not recognized: ai_trace"):
+        build_same_plot_preference_candidates(
+            [_same_plot_revision(defect_record_ids=["review-c1-001"])],
+            review_records=[
+                {
+                    "record_id": "review-c1-001",
+                    "defects": [{"label": "ai_trace"}],
+                }
+            ],
         )
 
 
@@ -282,8 +343,8 @@ def test_build_same_plot_preference_dataset_cli_writes_jsonl(tmp_path):
             "chosen": REVISED_OUTPUT,
             "rejected": MODEL_OUTPUT,
             "defect_record_ids": ["review-c1-001", "review-c1-002"],
-            "defect_labels": ["ai_trace", "dialogue_flatness", "generic_phrase"],
-            "reject_type": "ai_trace,dialogue_flatness,generic_phrase",
+            "defect_labels": ["dialogue_flatness", "generic_phrase", "payoff_blur"],
+            "reject_type": "dialogue_flatness,generic_phrase,payoff_blur",
             "source": "stage5d_same_plot_revision",
         }
     ]

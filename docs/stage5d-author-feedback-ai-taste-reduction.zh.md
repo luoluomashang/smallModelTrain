@@ -60,7 +60,7 @@ python scripts/build_rejection_sampling_sft.py --revisions data_review/stage5d_r
 构建 same-plot preference 候选：
 
 ```powershell
-python scripts/build_same_plot_preference_dataset.py --revisions data_review/stage5d_revisions.jsonl --output data_pref/stage5d_same_plot_preference.jsonl
+python scripts/build_same_plot_preference_dataset.py --revisions data_review/stage5d_revisions.jsonl --review-records data_review/stage5d_review_records.jsonl --output data_pref/stage5d_same_plot_preference.jsonl
 ```
 
 输出：`data_pref/stage5d_same_plot_preference.jsonl`
