@@ -25,7 +25,7 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
 
 def _summary(**overrides: object) -> dict:
     summary = {
-        "reviewed_outputs": 2,
+        "reviewed_outputs": 1,
         "reviewed_output_chars": 40,
         "defects": {
             "total_defects": 3,
@@ -33,9 +33,9 @@ def _summary(**overrides: object) -> dict:
             "by_severity": {"major": 1, "minor": 2},
         },
         "defect_density_per_10k_chars": 750.0,
-        "revision_records": 2,
+        "revision_records": 1,
         "accepted_revisions": 1,
-        "author_acceptance_rate": 0.5,
+        "author_acceptance_rate": 1.0,
         "edit_burden": {"mean_changed_chars": 4.0, "median_changed_chars": 4.0},
         "rejection_sampling_sft_rows": 1,
         "preference_candidate_rows": 1,
@@ -153,6 +153,65 @@ def test_stage5e_entry_gate_rejects_missing_seeded_generation_link():
     )
 
 
+def test_stage5e_entry_gate_rejects_accepted_revision_missing_link_field():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision(prompt_sha256="")],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "accepted revision missing generation link field: rev-1 prompt_sha256"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_generation_record_with_only_seed():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[{"id": "gen-seed-only", "seed": 7}],
+    )
+
+    assert result["passed"] is False
+    assert "generation record missing link field: gen-seed-only card_id" in result["errors"]
+    assert (
+        "generation record missing link field: gen-seed-only style_contract_sha256"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_reports_malformed_generation_row_direct_errors():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[
+            "not-an-object",
+            _generation(id="gen-bool-seed", seed=True),
+        ],
+    )
+
+    assert result["passed"] is False
+    assert "generation record must be a JSON object: row-1" in result["errors"]
+    assert "generation record missing integer seed: gen-bool-seed" in result["errors"]
+
+
 def test_stage5e_entry_gate_rejects_preference_rows_without_defect_labels():
     from small_model_train.review.stage5e_entry import check_stage5e_entry
 
@@ -169,6 +228,41 @@ def test_stage5e_entry_gate_rejects_preference_rows_without_defect_labels():
     assert "preference row requires non-empty defect_labels: pref-1" in result["errors"]
 
 
+def test_stage5e_entry_gate_rejects_summary_preference_count_mismatch():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(preference_candidate_rows=2),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "preference_candidate_rows does not match preference rows: summary=2 actual=1"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_empty_preference_candidates():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(preference_candidate_rows=0),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "preference candidate rows are required before Stage 5E" in result["errors"]
+
+
 def test_stage5e_entry_gate_requires_author_human_or_blind_review():
     from small_model_train.review.stage5e_entry import check_stage5e_entry
 
@@ -183,7 +277,26 @@ def test_stage5e_entry_gate_requires_author_human_or_blind_review():
 
     assert result["passed"] is False
     assert (
-        "author, human, or blind-review acceptance data is required before Stage 5E"
+        "accepted author, human, or blind-review evidence is required before Stage 5E"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_author_review_without_acceptance():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review(overall_acceptance="rejected")],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "accepted author, human, or blind-review evidence is required before Stage 5E"
         in result["errors"]
     )
 
@@ -232,3 +345,56 @@ def test_stage5e_entry_cli_writes_json_report(tmp_path: Path):
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["passed"] is True
     assert payload["errors"] == []
+
+
+def test_stage5e_entry_cli_writes_failed_gate_json_report(tmp_path: Path):
+    summary = tmp_path / "summary.json"
+    review_records = tmp_path / "reviews.jsonl"
+    revisions = tmp_path / "revisions.jsonl"
+    rejection_sampling_rows = tmp_path / "rs.jsonl"
+    preference_rows = tmp_path / "pref.jsonl"
+    generation_records = tmp_path / "generations.jsonl"
+    output = tmp_path / "out" / "stage5e_entry.json"
+    _write_json(summary, _summary())
+    _write_jsonl(review_records, [_review(overall_acceptance="rejected")])
+    _write_jsonl(revisions, [_revision()])
+    _write_jsonl(rejection_sampling_rows, [_rs_row()])
+    _write_jsonl(preference_rows, [_preference_row()])
+    _write_jsonl(generation_records, [_generation()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--summary",
+            str(summary),
+            "--review-records",
+            str(review_records),
+            "--revisions",
+            str(revisions),
+            "--rejection-sampling-rows",
+            str(rejection_sampling_rows),
+            "--preference-rows",
+            str(preference_rows),
+            "--generation-records",
+            str(generation_records),
+            "--output",
+            str(output),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["passed"] is False
+    assert (
+        "accepted author, human, or blind-review evidence is required before Stage 5E"
+        in payload["errors"]
+    )
+    assert (
+        "accepted author, human, or blind-review evidence is required before Stage 5E"
+        in result.stderr
+    )
