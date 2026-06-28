@@ -30,20 +30,23 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
 def _summary(**overrides: object) -> dict:
     summary = {
         "reviewed_outputs": 1,
-        "reviewed_output_chars": 40,
+        "reviewed_output_chars": 12,
         "defects": {
-            "total_defects": 3,
-            "by_label": {"generic_phrase": 2, "plan_execution_regression": 1},
-            "by_severity": {"major": 1, "minor": 2},
+            "total_defects": 1,
+            "by_label": {"generic_phrase": 1},
+            "by_severity": {"minor": 1},
         },
-        "defect_density_per_10k_chars": 750.0,
+        "defect_density_per_10k_chars": 833.3333,
         "revision_records": 1,
         "accepted_revisions": 1,
         "author_acceptance_rate": 1.0,
-        "edit_burden": {"mean_changed_chars": 4.0, "median_changed_chars": 4.0},
+        "changed_char_delta": 11,
+        "edit_burden": {"mean_changed_chars": 11.0, "median_changed_chars": 11.0},
         "rejection_sampling_sft_rows": 1,
         "preference_candidate_rows": 1,
+        "candidate_split_counts": {"train": 1},
         "non_train_rejection_sampling_rows": [],
+        "review_source_counts": {"author": 1},
         "plan_execution_regressions": 0,
         "boundary": "candidate_data_only_no_preference_training",
     }
@@ -207,7 +210,149 @@ def test_stage5e_entry_gate_rejects_missing_seeded_generation_link():
 
     assert result["passed"] is False
     assert (
-        "accepted revision lacks same-card same-style same-seed generation record: rev-c1-001"
+        "accepted revision lacks same-card, same-style when available, same-prompt, "
+        "same-raw-output generation record with integer seed provenance: rev-c1-001"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_forged_summary_metrics():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(
+            reviewed_output_chars=999,
+            defect_density_per_10k_chars=1.23,
+            plan_execution_regressions=99,
+            candidate_split_counts={"sealed": 1},
+            review_source_counts={"robot": 1},
+        ),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "reviewed_output_chars does not match recomputed Stage 5D summary: summary=999 actual=12"
+        in result["errors"]
+    )
+    assert (
+        "defect_density_per_10k_chars does not match recomputed Stage 5D summary: "
+        "summary=1.23 actual=833.3333"
+        in result["errors"]
+    )
+    assert (
+        "plan_execution_regressions does not match recomputed Stage 5D summary: "
+        "summary=99 actual=0"
+        in result["errors"]
+    )
+    assert (
+        "candidate_split_counts does not match recomputed Stage 5D summary: "
+        "summary={'sealed': 1} actual={'train': 1}"
+        in result["errors"]
+    )
+    assert (
+        "review_source_counts does not match recomputed Stage 5D summary: "
+        "summary={'robot': 1} actual={'author': 1}"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_requires_human_review_for_each_accepted_revision():
+    from small_model_train.review.stage5d_report import build_stage5d_summary
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+    from small_model_train.schemas.chapter_execution_card import text_sha256
+
+    second_model_output = "许昭把名单压住，窗外雨声停了一瞬。"
+    second_revised_output = "许昭没有抬头，只把名单压在灯下。窗外雨声停了一瞬。"
+    second_evidence_text = "雨声停了一瞬"
+    second_evidence_start = second_model_output.find(second_evidence_text)
+    second_raw_output_sha256 = text_sha256(second_model_output)
+    second_review = _review(
+        record_id="review-2",
+        card_id="card-c2-v1",
+        chapter_id="c2",
+        source_output_id="card-c2-v1",
+        raw_output_sha256=second_raw_output_sha256,
+        review_source="deterministic",
+        reviewer="rules",
+        defects=[
+            {
+                "label": "payoff_blur",
+                "severity": "minor",
+                "evidence_text": second_evidence_text,
+                "evidence_start": second_evidence_start,
+                "evidence_end": second_evidence_start + len(second_evidence_text),
+                "suggested_fix": "把情绪落到动作上。",
+            }
+        ],
+        overall_acceptance="accepted",
+    )
+    second_revision = _revision(
+        revision_id="rev-c2-001",
+        card_id="card-c2-v1",
+        chapter_id="c2",
+        raw_output_sha256=second_raw_output_sha256,
+        model_output=second_model_output,
+        revised_output=second_revised_output,
+        defect_record_ids=["review-2"],
+    )
+    second_rs_row = _rs_row(
+        output=second_revised_output,
+        revision_id="rev-c2-001",
+        card_id="card-c2-v1",
+        chapter_id="c2",
+        raw_output_sha256=second_raw_output_sha256,
+    )
+    second_preference_row = _preference_row(
+        id="rev-c2-001",
+        card_id="card-c2-v1",
+        chapter_id="c2",
+        chosen=second_revised_output,
+        rejected=second_model_output,
+        defect_record_ids=["review-2"],
+        defect_labels=["payoff_blur"],
+        reject_type="payoff_blur",
+    )
+    second_generation = _generation(
+        id="card-c2-v1",
+        output=second_model_output,
+        raw_output=second_model_output,
+    )
+    review_records = [_review(), second_review]
+    revision_records = [_revision(), second_revision]
+    rejection_sampling_rows = [_rs_row(), second_rs_row]
+    preference_rows = [_preference_row(), second_preference_row]
+    raw_outputs = {
+        "card-c1-v1": MODEL_OUTPUT,
+        "card-c2-v1": second_model_output,
+    }
+
+    result = check_stage5e_entry(
+        summary=build_stage5d_summary(
+            review_records,
+            revision_records,
+            rejection_sampling_rows,
+            preference_rows,
+            raw_outputs=raw_outputs,
+        ),
+        review_records=review_records,
+        revision_records=revision_records,
+        rejection_sampling_rows=rejection_sampling_rows,
+        preference_rows=preference_rows,
+        generation_records=[_generation(), second_generation],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "accepted revision lacks author, human, or blind-review evidence: rev-c2-001"
+        in result["errors"]
+    )
+    assert (
+        "accepted author, human, or blind-review evidence is required before Stage 5E"
         in result["errors"]
     )
 

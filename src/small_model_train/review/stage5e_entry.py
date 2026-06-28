@@ -8,6 +8,7 @@ from small_model_train.review.revision_records import (
     ACCEPTED_REVISION_STATUSES,
     validate_revision_record,
 )
+from small_model_train.review.stage5d_report import build_stage5d_summary
 from small_model_train.schemas.chapter_execution_card import text_sha256
 
 
@@ -27,6 +28,18 @@ REQUIRED_SUMMARY_FIELDS = (
     "preference_candidate_rows",
     "plan_execution_regressions",
     "boundary",
+)
+RECOMPUTED_SUMMARY_FIELDS = (
+    "reviewed_output_chars",
+    "defects",
+    "defect_density_per_10k_chars",
+    "author_acceptance_rate",
+    "changed_char_delta",
+    "edit_burden",
+    "candidate_split_counts",
+    "non_train_rejection_sampling_rows",
+    "review_source_counts",
+    "plan_execution_regressions",
 )
 REVISION_GENERATION_REQUIRED_FIELDS = (
     "card_id",
@@ -98,6 +111,7 @@ def check_stage5e_entry(
     errors: list[str] = []
 
     generations = _validate_generation_records(generation_records, errors)
+    raw_outputs = _raw_outputs_by_output_id(generations)
     revisions = _validate_revision_records(revision_records, errors)
     accepted_revisions = [
         revision
@@ -107,7 +121,7 @@ def check_stage5e_entry(
     accepted_by_id = _accepted_revisions_by_id(accepted_revisions, errors)
     reviews = _validate_review_records(
         review_records,
-        raw_outputs=_raw_outputs_by_output_id(generations),
+        raw_outputs=raw_outputs,
         errors=errors,
     )
     reviews_by_id = _reviews_by_record_id(reviews, errors)
@@ -119,11 +133,12 @@ def check_stage5e_entry(
 
     _check_summary(
         summary,
-        review_records=review_records,
-        revision_records=revision_records,
+        review_records=reviews,
+        revision_records=revisions,
         accepted_revision_count=len(accepted_revisions),
         rejection_sampling_rows=rejection_sampling_rows,
         preference_rows=preference_rows,
+        raw_outputs=raw_outputs,
         errors=errors,
     )
     _check_accepted_revision_review_evidence(review_links_by_revision_id, errors)
@@ -153,6 +168,7 @@ def _check_summary(
     accepted_revision_count: int,
     rejection_sampling_rows: list[dict[str, Any]],
     preference_rows: list[dict[str, Any]],
+    raw_outputs: dict[str, str],
     errors: list[str],
 ) -> None:
     if not isinstance(summary, dict):
@@ -221,6 +237,51 @@ def _check_summary(
     if blocker_rows:
         blocker_ids = ", ".join(str(row_id) for row_id in blocker_rows)
         errors.append(f"non-train rejection-sampling rows block Stage 5E: {blocker_ids}")
+
+    _check_recomputed_summary_fields(
+        summary,
+        review_records=review_records,
+        revision_records=revision_records,
+        rejection_sampling_rows=rejection_sampling_rows,
+        preference_rows=preference_rows,
+        raw_outputs=raw_outputs,
+        errors=errors,
+    )
+
+
+def _check_recomputed_summary_fields(
+    summary: dict[str, Any],
+    *,
+    review_records: list[dict[str, Any]],
+    revision_records: list[dict[str, Any]],
+    rejection_sampling_rows: list[dict[str, Any]],
+    preference_rows: list[dict[str, Any]],
+    raw_outputs: dict[str, str],
+    errors: list[str],
+) -> None:
+    if not isinstance(rejection_sampling_rows, list) or not isinstance(preference_rows, list):
+        return
+
+    try:
+        recomputed = build_stage5d_summary(
+            review_records,
+            revision_records,
+            rejection_sampling_rows,
+            preference_rows,
+            raw_outputs=raw_outputs,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        errors.append(f"Stage 5D summary could not be recomputed: {exc}")
+        return
+
+    for field in RECOMPUTED_SUMMARY_FIELDS:
+        summary_value = summary.get(field)
+        actual_value = recomputed.get(field)
+        if summary_value != actual_value:
+            errors.append(
+                f"{field} does not match recomputed Stage 5D summary: "
+                f"summary={summary_value} actual={actual_value}"
+            )
 
 
 def _validate_revision_records(
@@ -491,11 +552,17 @@ def _check_accepted_revision_review_evidence(
     review_links_by_revision_id: dict[str, dict[str, Any]],
     errors: list[str],
 ) -> None:
-    for link in review_links_by_revision_id.values():
-        if link["has_accepted_human_evidence"]:
-            return
+    missing_revision_ids = []
+    for revision_id, link in review_links_by_revision_id.items():
+        if not link["has_accepted_human_evidence"]:
+            missing_revision_ids.append(revision_id)
+            errors.append(
+                "accepted revision lacks author, human, or blind-review evidence: "
+                + revision_id
+            )
 
-    errors.append("accepted author, human, or blind-review evidence is required before Stage 5E")
+    if missing_revision_ids:
+        errors.append("accepted author, human, or blind-review evidence is required before Stage 5E")
 
 
 def _is_accepted_human_review(record: dict[str, Any]) -> bool:
@@ -639,7 +706,8 @@ def _check_accepted_generation_links(
 
         if not linked:
             errors.append(
-                "accepted revision lacks same-card same-style same-seed generation record: "
+                "accepted revision lacks same-card, same-style when available, same-prompt, "
+                "same-raw-output generation record with integer seed provenance: "
                 + revision_id
             )
 

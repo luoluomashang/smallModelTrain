@@ -868,7 +868,11 @@ def test_stage5e_entry_gate_rejects_missing_seeded_generation_link():
     )
 
     assert result["passed"] is False
-    assert "accepted revision lacks same-card same-style same-seed generation record: rev-1" in result["errors"]
+    assert (
+        "accepted revision lacks same-card, same-style when available, same-prompt, "
+        "same-raw-output generation record with integer seed provenance: rev-1"
+        in result["errors"]
+    )
 
 
 def test_stage5e_entry_cli_writes_json_report(tmp_path: Path):
@@ -1058,7 +1062,8 @@ def _require_seeded_generation_links(
         )
         if key not in generation_keys:
             errors.append(
-                "accepted revision lacks same-card same-style same-seed generation record: "
+                "accepted revision lacks same-card, same-style when available, same-prompt, "
+                "same-raw-output generation record with integer seed provenance: "
                 + str(revision.get("revision_id", "<missing revision_id>"))
             )
 ```
@@ -1180,7 +1185,7 @@ Stage 5E 只能在 Stage 5D 证据通过入场检查后开始：
 python scripts/check_stage5e_entry.py --summary reports/stage5d_review_summary.json --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --generation-records outputs/stage5d_generation_records.jsonl --output reports/stage5e_entry_check.json
 ```
 
-通过条件：报告包含缺陷密度、作者接受率、编辑负担、候选行数和 plan-execution regression；rejection-sampling SFT 候选只来自 train split；accepted 作者修订能追溯到同 card、同 StyleContract、同 prompt hash、同 seed 的生成记录；存在作者、人审或盲审接受数据。
+通过条件：报告包含缺陷密度、作者接受率、编辑负担、候选行数和 plan-execution regression；rejection-sampling SFT 候选只来自 train split；accepted 作者修订能追溯到同 card、可用时同 StyleContract、同 prompt hash、同 raw output 的生成记录，且生成记录带有整数 seed provenance；每条 accepted 修订都存在作者、人审或盲审接受数据。
 ```
 ```
 
