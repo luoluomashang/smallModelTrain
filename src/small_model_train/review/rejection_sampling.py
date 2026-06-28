@@ -62,6 +62,7 @@ def build_rejection_sampling_sft_rows(
                 "chapter_id": validated_revision["chapter_id"],
                 "style_contract_sha256": validated_revision["style_contract_sha256"],
                 "raw_output_sha256": validated_revision["raw_output_sha256"],
+                "source_split": str(card["provenance"].get("split") or "unknown"),
             }
         )
     return rows

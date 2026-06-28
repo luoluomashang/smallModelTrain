@@ -133,6 +133,7 @@ def test_build_rejection_sampling_sft_rows_uses_formal_prompt_and_revised_output
             "chapter_id": "c1",
             "style_contract_sha256": contract["contract_sha256"],
             "raw_output_sha256": text_sha256(MODEL_OUTPUT),
+            "source_split": "train",
         }
     ]
 
