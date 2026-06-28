@@ -6,6 +6,7 @@ __pycache__/
 data_raw/
 data_clean/
 data_cards/
+data_review/
 data_sft/
 data_pref/
 data_style/
