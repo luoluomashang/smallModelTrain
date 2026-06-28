@@ -420,6 +420,82 @@ def test_stage5e_entry_gate_rejects_preference_field_mismatch():
     assert "preference row mismatch accepted revision: rev-c1-001 chosen" in result["errors"]
 
 
+def test_stage5e_entry_gate_rejects_forged_preference_defect_labels():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review()],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[
+            _preference_row(defect_labels=["payoff_blur"], reject_type="payoff_blur")
+        ],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert (
+        "preference row defect_labels do not match referenced review defects: rev-c1-001"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_rejects_unrelated_accepted_review_evidence():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review(record_id="review-other")],
+        revision_records=[_revision(defect_record_ids=["review-1"])],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation()],
+    )
+
+    assert result["passed"] is False
+    assert "accepted revision referenced review missing: rev-c1-001 review-1" in result["errors"]
+    assert (
+        "accepted author, human, or blind-review evidence is required before Stage 5E"
+        in result["errors"]
+    )
+
+
+def test_stage5e_entry_gate_accepts_generation_output_id_separate_from_card_id():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review(source_output_id="gen-1")],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[_generation(id="gen-1", card_id="card-c1-v1")],
+    )
+
+    assert result["passed"] is True
+    assert result["errors"] == []
+
+
+def test_stage5e_entry_gate_rejects_duplicate_generation_output_id():
+    from small_model_train.review.stage5e_entry import check_stage5e_entry
+
+    result = check_stage5e_entry(
+        summary=_summary(),
+        review_records=[_review(source_output_id="gen-1")],
+        revision_records=[_revision()],
+        rejection_sampling_rows=[_rs_row()],
+        preference_rows=[_preference_row()],
+        generation_records=[
+            _generation(id="gen-1", card_id="card-c1-v1"),
+            _generation(id="gen-1", card_id="card-c1-v1"),
+        ],
+    )
+
+    assert result["passed"] is False
+    assert "duplicate generation output id: gen-1" in result["errors"]
+
+
 def test_stage5e_entry_gate_rejects_summary_preference_count_mismatch():
     from small_model_train.review.stage5e_entry import check_stage5e_entry
 

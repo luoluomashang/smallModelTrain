@@ -77,6 +77,13 @@ PREFERENCE_REVISION_FIELDS = (
     ("defect_record_ids", "defect_record_ids"),
 )
 SAME_PLOT_PREFERENCE_SOURCE = "stage5d_same_plot_revision"
+REVIEW_REVISION_PROVENANCE_FIELDS = (
+    "card_id",
+    "chapter_id",
+    "style_contract_id",
+    "style_contract_sha256",
+    "raw_output_sha256",
+)
 
 
 def check_stage5e_entry(
@@ -100,7 +107,13 @@ def check_stage5e_entry(
     accepted_by_id = _accepted_revisions_by_id(accepted_revisions, errors)
     reviews = _validate_review_records(
         review_records,
-        raw_outputs=_raw_outputs_by_source_id(generations),
+        raw_outputs=_raw_outputs_by_output_id(generations),
+        errors=errors,
+    )
+    reviews_by_id = _reviews_by_record_id(reviews, errors)
+    review_links_by_revision_id = _accepted_revision_review_links(
+        accepted_revisions,
+        reviews_by_id=reviews_by_id,
         errors=errors,
     )
 
@@ -113,7 +126,7 @@ def check_stage5e_entry(
         preference_rows=preference_rows,
         errors=errors,
     )
-    _check_review_records(reviews, errors)
+    _check_accepted_revision_review_evidence(review_links_by_revision_id, errors)
     _check_rejection_sampling_rows(
         summary,
         rejection_sampling_rows,
@@ -124,6 +137,7 @@ def check_stage5e_entry(
         summary,
         preference_rows,
         accepted_by_id=accepted_by_id,
+        review_links_by_revision_id=review_links_by_revision_id,
         errors=errors,
     )
     _check_accepted_generation_links(accepted_revisions, generations, errors)
@@ -271,8 +285,9 @@ def _validate_generation_records(
             errors.append(f"generation record must be a JSON object: row-{index}")
             continue
 
+        output_id = _generation_output_id(row)
+        card_id = _generation_card_id(row, output_id)
         row_id = _generation_row_id(row, index)
-        source_id = _first_non_empty_string(row, ("card_id", "source_output_id", "id"))
         prompt_sha256 = row.get("prompt_sha256")
         raw_output = _generation_raw_output(row)
         seed = _generation_seed(row)
@@ -285,9 +300,12 @@ def _validate_generation_records(
         )
 
         valid = True
-        if source_id is None:
+        if output_id is None:
             valid = False
-            errors.append(f"generation record missing source id: {row_id}")
+            errors.append(f"generation record missing output id: {row_id}")
+        if card_id is None:
+            valid = False
+            errors.append(f"generation record missing card id: {row_id}")
         if not _is_lower_hex_sha256(prompt_sha256):
             valid = False
             if _non_empty_string(prompt_sha256):
@@ -307,10 +325,14 @@ def _validate_generation_records(
             errors.append(f"generation record invalid style_contract_sha256: {row_id}")
 
         if valid:
+            if any(generation["output_id"] == output_id for generation in generations):
+                errors.append(f"duplicate generation output id: {output_id}")
+                continue
             generations.append(
                 {
                     "row_id": row_id,
-                    "source_id": source_id,
+                    "output_id": output_id,
+                    "card_id": card_id,
                     "prompt_sha256": prompt_sha256,
                     "raw_output": raw_output,
                     "raw_output_sha256": raw_output_sha256,
@@ -361,10 +383,18 @@ def _generation_seed(row: dict[str, Any]) -> Any:
     return None
 
 
-def _raw_outputs_by_source_id(generations: list[dict[str, Any]]) -> dict[str, str]:
+def _generation_output_id(row: dict[str, Any]) -> str | None:
+    return _first_non_empty_string(row, ("source_output_id", "id"))
+
+
+def _generation_card_id(row: dict[str, Any], output_id: str | None) -> str | None:
+    return _first_non_empty_string(row, ("card_id",)) or output_id
+
+
+def _raw_outputs_by_output_id(generations: list[dict[str, Any]]) -> dict[str, str]:
     raw_outputs: dict[str, str] = {}
     for generation in generations:
-        raw_outputs[generation["source_id"]] = generation["raw_output"]
+        raw_outputs[generation["output_id"]] = generation["raw_output"]
     return raw_outputs
 
 
@@ -399,18 +429,83 @@ def _validate_review_records(
     return reviews
 
 
-def _check_review_records(review_records: list[dict[str, Any]], errors: list[str]) -> None:
+def _reviews_by_record_id(
+    review_records: list[dict[str, Any]],
+    errors: list[str],
+) -> dict[str, dict[str, Any]]:
+    reviews_by_id: dict[str, dict[str, Any]] = {}
     for record in review_records:
-        review_source = str(record.get("review_source") or "").strip()
-        reviewer = str(record.get("reviewer") or "").strip()
-        acceptance = record.get("overall_acceptance")
-        if (
-            (review_source in HUMAN_REVIEW_SOURCES or reviewer in HUMAN_REVIEW_SOURCES)
-            and acceptance in ACCEPTED_REVISION_STATUSES
-        ):
+        record_id = record["record_id"]
+        if record_id in reviews_by_id:
+            errors.append(f"duplicate review record id: {record_id}")
+            continue
+        reviews_by_id[record_id] = record
+    return reviews_by_id
+
+
+def _accepted_revision_review_links(
+    accepted_revisions: list[dict[str, Any]],
+    *,
+    reviews_by_id: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> dict[str, dict[str, Any]]:
+    links_by_revision_id: dict[str, dict[str, Any]] = {}
+    for revision in accepted_revisions:
+        revision_id = revision["revision_id"]
+        labels: set[str] = set()
+        has_accepted_human_evidence = False
+
+        for record_id in revision["defect_record_ids"]:
+            review = reviews_by_id.get(record_id)
+            if review is None:
+                errors.append(f"accepted revision referenced review missing: {revision_id} {record_id}")
+                continue
+
+            for field in REVIEW_REVISION_PROVENANCE_FIELDS:
+                if review.get(field) != revision[field]:
+                    errors.append(
+                        "accepted revision referenced review provenance mismatch: "
+                        f"{revision_id} {record_id} {field}"
+                    )
+
+            for defect in review.get("defects", []):
+                label = defect.get("label")
+                if _non_empty_string(label):
+                    labels.add(str(label))
+
+            if _is_accepted_human_review(review):
+                has_accepted_human_evidence = True
+
+        defect_labels = sorted(labels)
+        if not defect_labels:
+            errors.append(f"accepted revision referenced reviews have no defect labels: {revision_id}")
+
+        links_by_revision_id[revision_id] = {
+            "defect_labels": defect_labels,
+            "has_accepted_human_evidence": has_accepted_human_evidence,
+        }
+    return links_by_revision_id
+
+
+def _check_accepted_revision_review_evidence(
+    review_links_by_revision_id: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> None:
+    for link in review_links_by_revision_id.values():
+        if link["has_accepted_human_evidence"]:
             return
 
     errors.append("accepted author, human, or blind-review evidence is required before Stage 5E")
+
+
+def _is_accepted_human_review(record: dict[str, Any]) -> bool:
+    review_source = str(record.get("review_source") or "").strip()
+    reviewer = str(record.get("reviewer") or "").strip()
+    acceptance = record.get("overall_acceptance")
+    return (
+        (review_source in HUMAN_REVIEW_SOURCES or reviewer in HUMAN_REVIEW_SOURCES)
+        and acceptance in ACCEPTED_REVISION_STATUSES
+    )
 
 
 def _check_rejection_sampling_rows(
@@ -460,6 +555,7 @@ def _check_preference_rows(
     preference_rows: list[dict[str, Any]],
     *,
     accepted_by_id: dict[str, dict[str, Any]],
+    review_links_by_revision_id: dict[str, dict[str, Any]],
     errors: list[str],
 ) -> None:
     missing_candidate_error_added = False
@@ -500,9 +596,20 @@ def _check_preference_rows(
             if row.get(row_field) != revision[revision_field]:
                 errors.append(f"preference row mismatch accepted revision: {row_id} {row_field}")
 
+        expected_labels = review_links_by_revision_id.get(revision["revision_id"], {}).get(
+            "defect_labels",
+            [],
+        )
         defect_labels = row.get("defect_labels")
-        if _non_empty_string_list(defect_labels) and row.get("reject_type") != ",".join(defect_labels):
-            errors.append(f"preference row mismatch accepted revision: {row_id} reject_type")
+        if _non_empty_string_list(defect_labels) and defect_labels != expected_labels:
+            errors.append(
+                f"preference row defect_labels do not match referenced review defects: {row_id}"
+            )
+        expected_reject_type = ",".join(expected_labels)
+        if expected_reject_type and row.get("reject_type") != expected_reject_type:
+            errors.append(
+                f"preference row reject_type does not match referenced review defects: {row_id}"
+            )
 
 
 def _check_accepted_generation_links(
@@ -542,7 +649,7 @@ def _generation_matches_revision_core(
     revision: dict[str, Any],
 ) -> bool:
     return (
-        generation["source_id"] == revision["card_id"]
+        generation["card_id"] == revision["card_id"]
         and generation["prompt_sha256"] == revision["prompt_sha256"]
         and generation["raw_output_sha256"] == revision["raw_output_sha256"]
     )
@@ -590,7 +697,7 @@ def _review_row_id(row: Any, index: int) -> str:
 
 
 def _generation_row_id(row: dict[str, Any], index: int) -> str:
-    value = _first_non_empty_string(row, ("card_id", "source_output_id", "id"))
+    value = _first_non_empty_string(row, ("source_output_id", "id", "card_id"))
     if value is not None:
         return value
     return f"row-{index}"
