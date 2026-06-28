@@ -40,6 +40,22 @@ def _same_plot_revision(**overrides):
     return record
 
 
+def _review_records():
+    return [
+        {
+            "record_id": "review-c1-001",
+            "defects": [
+                {"label": "generic_phrase"},
+                {"label": "dialogue_flatness"},
+            ],
+        },
+        {
+            "record_id": "review-c1-002",
+            "defects": [{"label": "ai_trace"}],
+        },
+    ]
+
+
 def test_build_preference_candidates_uses_failed_scores():
     cards = [{"id": "c1", "prompt": "卡", "style_contract": "契约"}]
     outputs = [{"id": "c1", "output": "坏正文"}]
@@ -165,7 +181,9 @@ def test_build_preference_dataset_cli_writes_jsonl(tmp_path):
 
 
 def test_build_same_plot_preference_candidates_uses_accepted_revision():
-    rows = build_same_plot_preference_candidates([_same_plot_revision()])
+    rows = build_same_plot_preference_candidates(
+        [_same_plot_revision()], review_records=_review_records()
+    )
 
     assert rows == [
         {
@@ -176,15 +194,45 @@ def test_build_same_plot_preference_candidates_uses_accepted_revision():
             "style_contract_sha256": "a" * 64,
             "chosen": REVISED_OUTPUT,
             "rejected": MODEL_OUTPUT,
-            "reject_type": "review-c1-001,review-c1-002",
+            "defect_record_ids": ["review-c1-001", "review-c1-002"],
+            "defect_labels": ["ai_trace", "dialogue_flatness", "generic_phrase"],
+            "reject_type": "ai_trace,dialogue_flatness,generic_phrase",
             "source": "stage5d_same_plot_revision",
         }
     ]
 
 
+def test_build_same_plot_preference_candidates_includes_defect_labels():
+    rows = build_same_plot_preference_candidates(
+        [_same_plot_revision(defect_record_ids=["review-c1-001"])],
+        review_records=[
+            {
+                "record_id": "review-c1-001",
+                "defects": [
+                    {"label": "generic_phrase"},
+                    {"label": "dialogue_flatness"},
+                ],
+            }
+        ],
+    )
+
+    assert rows[0]["defect_record_ids"] == ["review-c1-001"]
+    assert rows[0]["defect_labels"] == ["dialogue_flatness", "generic_phrase"]
+    assert rows[0]["reject_type"] == "dialogue_flatness,generic_phrase"
+
+
+def test_build_same_plot_preference_candidates_rejects_missing_defect_record():
+    with pytest.raises(ValueError, match="defect record not found: review-c1-404"):
+        build_same_plot_preference_candidates(
+            [_same_plot_revision(defect_record_ids=["review-c1-404"])],
+            review_records=[],
+        )
+
+
 def test_build_same_plot_preference_candidates_skips_unaccepted_revision():
     rows = build_same_plot_preference_candidates(
-        [_same_plot_revision(revision_status="rejected")]
+        [_same_plot_revision(revision_status="rejected")],
+        review_records=_review_records(),
     )
 
     assert rows == []
@@ -193,14 +241,17 @@ def test_build_same_plot_preference_candidates_skips_unaccepted_revision():
 def test_build_same_plot_preference_candidates_rejects_invalid_raw_output_hash():
     with pytest.raises(ValueError, match="raw_output_sha256 mismatch"):
         build_same_plot_preference_candidates(
-            [_same_plot_revision(raw_output_sha256="c" * 64)]
+            [_same_plot_revision(raw_output_sha256="c" * 64)],
+            review_records=_review_records(),
         )
 
 
 def test_build_same_plot_preference_dataset_cli_writes_jsonl(tmp_path):
     revisions_path = tmp_path / "revisions.jsonl"
+    review_records_path = tmp_path / "review_records.jsonl"
     output_path = tmp_path / "same_plot_preference.jsonl"
     write_jsonl(revisions_path, [_same_plot_revision()])
+    write_jsonl(review_records_path, _review_records())
 
     result = subprocess.run(
         [
@@ -208,6 +259,8 @@ def test_build_same_plot_preference_dataset_cli_writes_jsonl(tmp_path):
             "scripts/build_same_plot_preference_dataset.py",
             "--revisions",
             str(revisions_path),
+            "--review-records",
+            str(review_records_path),
             "--output",
             str(output_path),
         ],
@@ -228,7 +281,9 @@ def test_build_same_plot_preference_dataset_cli_writes_jsonl(tmp_path):
             "style_contract_sha256": "a" * 64,
             "chosen": REVISED_OUTPUT,
             "rejected": MODEL_OUTPUT,
-            "reject_type": "review-c1-001,review-c1-002",
+            "defect_record_ids": ["review-c1-001", "review-c1-002"],
+            "defect_labels": ["ai_trace", "dialogue_flatness", "generic_phrase"],
+            "reject_type": "ai_trace,dialogue_flatness,generic_phrase",
             "source": "stage5d_same_plot_revision",
         }
     ]
@@ -236,7 +291,9 @@ def test_build_same_plot_preference_dataset_cli_writes_jsonl(tmp_path):
 
 def test_build_same_plot_preference_dataset_cli_fails_missing_revisions(tmp_path):
     revisions_path = tmp_path / "missing_revisions.jsonl"
+    review_records_path = tmp_path / "review_records.jsonl"
     output_path = tmp_path / "same_plot_preference.jsonl"
+    write_jsonl(review_records_path, _review_records())
 
     result = subprocess.run(
         [
@@ -244,6 +301,8 @@ def test_build_same_plot_preference_dataset_cli_fails_missing_revisions(tmp_path
             "scripts/build_same_plot_preference_dataset.py",
             "--revisions",
             str(revisions_path),
+            "--review-records",
+            str(review_records_path),
             "--output",
             str(output_path),
         ],
@@ -254,4 +313,31 @@ def test_build_same_plot_preference_dataset_cli_fails_missing_revisions(tmp_path
 
     assert result.returncode != 0
     assert "revisions JSONL not found" in result.stderr
+    assert not output_path.exists()
+
+
+def test_build_same_plot_preference_dataset_cli_fails_missing_review_records(tmp_path):
+    revisions_path = tmp_path / "revisions.jsonl"
+    review_records_path = tmp_path / "missing_review_records.jsonl"
+    output_path = tmp_path / "same_plot_preference.jsonl"
+    write_jsonl(revisions_path, [_same_plot_revision()])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_same_plot_preference_dataset.py",
+            "--revisions",
+            str(revisions_path),
+            "--review-records",
+            str(review_records_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert f"review records JSONL not found: {review_records_path}" in result.stderr
     assert not output_path.exists()

@@ -16,6 +16,7 @@ from small_model_train.preference_builder import build_same_plot_preference_cand
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--revisions", required=True)
+    parser.add_argument("--review-records", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -23,8 +24,14 @@ def main() -> int:
         revisions_path = Path(args.revisions)
         if not revisions_path.exists():
             raise ValueError(f"revisions JSONL not found: {revisions_path}")
+        review_records_path = Path(args.review_records)
+        if not review_records_path.exists():
+            raise ValueError(f"review records JSONL not found: {review_records_path}")
 
-        rows = build_same_plot_preference_candidates(read_jsonl(revisions_path))
+        rows = build_same_plot_preference_candidates(
+            read_jsonl(revisions_path),
+            review_records=read_jsonl(review_records_path),
+        )
         write_jsonl(args.output, rows)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
