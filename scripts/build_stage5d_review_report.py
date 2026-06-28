@@ -23,15 +23,19 @@ def main() -> int:
     parser.add_argument("--revisions", required=True)
     parser.add_argument("--rejection-sampling-rows", required=True)
     parser.add_argument("--preference-rows", required=True)
+    parser.add_argument("--raw-outputs")
     parser.add_argument("--summary-output", required=True)
     parser.add_argument("--report-output", required=True)
     args = parser.parse_args()
+    if args.raw_outputs is None:
+        parser.error("--raw-outputs is required")
 
     try:
         review_records = _read_required_jsonl(args.review_records)
         revision_records = _read_required_jsonl(args.revisions)
         rejection_sampling_rows = _read_required_jsonl(args.rejection_sampling_rows)
         preference_rows = _read_required_jsonl(args.preference_rows)
+        raw_outputs = _read_raw_outputs(args.raw_outputs)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -41,6 +45,7 @@ def main() -> int:
         revision_records,
         rejection_sampling_rows,
         preference_rows,
+        raw_outputs=raw_outputs,
     )
     report = render_stage5d_report(summary)
 
@@ -65,6 +70,31 @@ def _read_required_jsonl(path: str) -> list[dict]:
         return read_jsonl(file_path)
     except ValueError as exc:
         raise ValueError(f"required input path is invalid: {file_path}: {exc}") from exc
+
+
+def _read_raw_outputs(path: str) -> dict[str, str]:
+    rows = _read_required_jsonl(path)
+    raw_outputs: dict[str, str] = {}
+    for index, row in enumerate(rows, start=1):
+        output_id = row.get("id") or row.get("source_output_id")
+        if not output_id:
+            raise ValueError(f"raw output row {index} is missing id/source_output_id")
+        output_key = str(output_id)
+        if output_key in raw_outputs:
+            raise ValueError(f"raw output id is duplicated: {output_key}")
+        output_text = _raw_output_text(row)
+        if output_text is None:
+            raise ValueError(f"raw output row {index} is missing output/text/raw_output")
+        raw_outputs[output_key] = output_text
+    return raw_outputs
+
+
+def _raw_output_text(row: dict) -> str | None:
+    for field in ("output", "text", "raw_output"):
+        value = row.get(field)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 if __name__ == "__main__":
