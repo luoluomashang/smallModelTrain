@@ -1897,7 +1897,7 @@ In `docs/superpowers/plans/2026-06-23-small-model-train-full-roadmap.md`, update
 - First repair the Stage 5C formal admission duplicate chapter id and manifest overwrite gap.
 ```
 
-Keep Stage 5E blocked until Stage 5D produces stable same-card, same-style, same-seed evidence.
+Keep Stage 5E blocked until Stage 5D produces stable same-card, same-style, same-prompt/raw-output evidence with generation seed provenance.
 
 - [ ] **Step 5: Run docs scan**
 
