@@ -36,17 +36,17 @@ def main() -> int:
         rejection_sampling_rows = _read_required_jsonl(args.rejection_sampling_rows)
         preference_rows = _read_required_jsonl(args.preference_rows)
         raw_outputs = _read_raw_outputs(args.raw_outputs)
+        summary = build_stage5d_summary(
+            review_records,
+            revision_records,
+            rejection_sampling_rows,
+            preference_rows,
+            raw_outputs=raw_outputs,
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    summary = build_stage5d_summary(
-        review_records,
-        revision_records,
-        rejection_sampling_rows,
-        preference_rows,
-        raw_outputs=raw_outputs,
-    )
     report = render_stage5d_report(summary)
 
     summary_path = Path(args.summary_output)

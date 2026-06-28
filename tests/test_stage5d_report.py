@@ -396,6 +396,52 @@ def test_cli_rejects_empty_raw_output_text(tmp_path: Path):
     assert not report_output.exists()
 
 
+def test_cli_reports_missing_reviewed_raw_output_without_traceback(tmp_path: Path):
+    review_records = tmp_path / "review.jsonl"
+    revisions = tmp_path / "revisions.jsonl"
+    rejection_sampling_rows = tmp_path / "rs.jsonl"
+    preference_rows = tmp_path / "pref.jsonl"
+    raw_outputs = tmp_path / "raw_outputs.jsonl"
+    summary_output = tmp_path / "out" / "summary.json"
+    report_output = tmp_path / "out" / "report.md"
+    _write_jsonl(review_records, [{"source_output_id": "gen-missing", "defects": []}])
+    _write_jsonl(revisions, [])
+    _write_jsonl(rejection_sampling_rows, [])
+    _write_jsonl(preference_rows, [])
+    _write_jsonl(raw_outputs, [{"id": "gen-other", "raw_output": "山河"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--review-records",
+            str(review_records),
+            "--revisions",
+            str(revisions),
+            "--rejection-sampling-rows",
+            str(rejection_sampling_rows),
+            "--preference-rows",
+            str(preference_rows),
+            "--raw-outputs",
+            str(raw_outputs),
+            "--summary-output",
+            str(summary_output),
+            "--report-output",
+            str(report_output),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "missing raw output for reviewed output id: gen-missing" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not summary_output.exists()
+    assert not report_output.exists()
+
+
 def test_cli_fails_nonzero_without_outputs_when_required_input_path_is_missing(tmp_path: Path):
     missing_review_records = tmp_path / "missing-review.jsonl"
     revisions = tmp_path / "revisions.jsonl"
