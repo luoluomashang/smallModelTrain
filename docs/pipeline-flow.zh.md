@@ -157,6 +157,12 @@ Stage 5D 报告由 `scripts/build_stage5d_review_report.py` 构建，并通过 `
 
 注意：Stage 5D 的 preference rows 只是候选数据，不是 DPO、SimPO、ORPO、KTO，也不表示已经运行 reward model training 或 preference optimization。Stage 5D 报告和 Stage 5E 入场检查只能说明作者反馈数据和候选行是否可追溯，不能证明模型质量已经改善或允许扩大到 100/500 条正式训练。
 
+### Stage 5E 控制面：受控实验与效率
+
+Stage 5E 在 `check_stage5e_entry.py` 和完整 pytest 通过后开始。第一步构建 `reports/stage5e_experiment_manifest.json`，记录 primary variable、controlled variables、dataset/config/eval artifact hashes 和 Stage 5D gate evidence；第二步使用 `scripts/run_experiment_matrix.py --dry-run` 写出候选 experiment commands；第三步使用 `scripts/build_paired_eval_report.py` 做 paired comparison。
+
+注意：control plane 不自动运行 preference optimization，不把 efficiency win 当作 prose win，也不允许一次改变多个 primary variables。
+
 ### Stage 4 前置：准备执行卡
 
 `data_cards/eval_cards_50.jsonl` 还不足以进入 Stage 4 执行和评测。你需要从固定评测集手动或用 Agent 准备 `data_cards/eval_execution_cards_50.jsonl`，并补齐执行卡字段：`id`、`target_platform`、`genre_tags`、`style_contract`、`chapter_goal`、`chapter_structure`、`conflict_beat`、`payoff_beat`、`must_include`、`must_not_include`、`ending_hook`、`target_word_count`。
@@ -317,3 +323,4 @@ python scripts/build_stage4_quality_report.py --cards data_cards/eval_cards_qual
 - Stage 5B：StyleContract 闭环，formal SFT 必须绑定 `data_style/style_contract_author_main_v1.json` 作为机器门禁源，`style_contract.md` 只用于人工审阅。
 - Stage 5C：正式 `ChapterExecutionCard` 和数据完整性闭环，formal SFT 使用 `card_status` 为 `approved` 或 `frozen` 的卡并写出 dataset manifest。
 - Stage 5D：先补齐 formal admission 重复 trainable chapter id，以及 manifest 中重复 card_id/chapter_id key 导致 card_hashes/chapter_hashes 静默覆盖的风险检查，再记录 AI 味缺陷、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选；不运行 DPO、SimPO、ORPO、KTO 或偏好优化训练。Stage 5E 只能在 `scripts/check_stage5e_entry.py` 通过，并且完整 `python -m pytest` 通过后开始。
+- Stage 5E：受控实验与效率控制面，先写 experiment manifest，再 dry-run 实验矩阵，最后用 paired eval 比较；一次只能改变一个 primary variable，不自动运行 preference optimization。

@@ -207,7 +207,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Status:** Blocked until `reports/stage5e_entry_check.json` exists with `"passed": true`.
 
-**Future plan file:** `docs/superpowers/plans/2026-06-23-stage5e-controlled-experimentation-efficiency.md`
+**Plan file:** `docs/superpowers/plans/2026-06-28-stage5e-controlled-experimentation-efficiency.md`
 
 **Purpose:** Run controlled model, data, PEFT, generation, and efficiency experiments only after the evidence system can prove whether each change helps.
 

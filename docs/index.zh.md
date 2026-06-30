@@ -26,7 +26,8 @@
 6. [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)
 7. [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)
 8. [Stage 5D 作者反馈与 AI 味降低指南](stage5d-author-feedback-ai-taste-reduction.zh.md)
-9. [Stage 4 决策日志](stage4-decision-log.zh.md)
+9. [Stage 5E 受控实验与效率指南](stage5e-controlled-experimentation-efficiency.zh.md)
+10. [Stage 4 决策日志](stage4-decision-log.zh.md)
 
 这条路线适合已经会用 PowerShell、Python，并且只想按步骤复跑数据准备、训练检查、评测和报告的人。
 
@@ -52,6 +53,7 @@
 - [Stage 5B StyleContract 闭环指南](stage5b-style-contract-closure.zh.md)：解释 StyleContract JSON、Markdown、metrics、approval status 和 formal SFT 绑定。
 - [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)：解释 ChapterExecutionCard、正式卡审批、数据 split、泄漏检查和 dataset manifest。
 - [Stage 5D 作者反馈与 AI 味降低指南](stage5d-author-feedback-ai-taste-reduction.zh.md)：解释 formal admission 修复、AI 味缺陷证据、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选。
+- [Stage 5E 受控实验与效率指南](stage5e-controlled-experimentation-efficiency.zh.md)：解释 Stage 5E manifest、paired eval、dry-run 实验矩阵和单变量实验边界。
 - [Stage 4 决策日志](stage4-decision-log.zh.md)：记录当前是否允许扩大训练规模，以及原因。
 - [Stage 4.1 Full50 归档](stage4-1-full50-archive.zh.md)：归档 full50 运行证据。
 - [Stage 4.1 Full50 Manual Review Findings](stage4-1-full50-manual-review.zh.md)：记录人工复核发现。
