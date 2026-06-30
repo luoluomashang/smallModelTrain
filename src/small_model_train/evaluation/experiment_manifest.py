@@ -166,8 +166,7 @@ def _validate_stage5e_entry(stage5e_entry: Any) -> None:
     _require_non_empty_string(stage5e_entry.get("path"), "stage5e_entry.path")
     if stage5e_entry.get("passed") is not True:
         raise ValueError("Stage 5E entry gate must pass")
-    if not isinstance(stage5e_entry.get("entry"), dict):
-        raise ValueError("stage5e_entry.entry must be an object")
+    _require_non_empty_string(stage5e_entry.get("entry"), "stage5e_entry.entry")
 
 
 def _validate_artifacts(artifacts: Any) -> None:

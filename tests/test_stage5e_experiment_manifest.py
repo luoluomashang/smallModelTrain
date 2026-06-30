@@ -8,6 +8,7 @@ import pytest
 from small_model_train.evaluation.experiment_manifest import (
     build_experiment_manifest,
     validate_experiment_manifest,
+    write_experiment_manifest,
 )
 
 
@@ -19,7 +20,8 @@ def test_build_experiment_manifest_records_gate_primary_variable_and_artifact_ha
 ):
     stage5e_entry = tmp_path / "stage5e_entry.json"
     stage5e_entry.write_text(
-        json.dumps({"passed": True, "entry": {"stage5d_review": "passed"}}) + "\n",
+        json.dumps({"passed": True, "entry": "stage5e_controlled_experimentation"})
+        + "\n",
         encoding="utf-8",
     )
     sft_dataset = tmp_path / "sft.jsonl"
@@ -50,7 +52,7 @@ def test_build_experiment_manifest_records_gate_primary_variable_and_artifact_ha
 
     assert manifest["schema_version"] == 1
     assert manifest["stage5e_entry"]["passed"] is True
-    assert manifest["stage5e_entry"]["entry"] == {"stage5d_review": "passed"}
+    assert manifest["stage5e_entry"]["entry"] == "stage5e_controlled_experimentation"
     assert manifest["primary_variable"]["name"] == "learning_rate"
     assert set(manifest["artifacts"]) == {"sft_dataset", "eval_cards", "config"}
     for artifact_name, artifact in manifest["artifacts"].items():
@@ -63,6 +65,11 @@ def test_build_experiment_manifest_records_gate_primary_variable_and_artifact_ha
         )
         assert SHA256_RE.match(artifact["sha256"])
     assert manifest["paired_eval"] == paired_eval
+
+    output_path = tmp_path / "manifest.json"
+    write_experiment_manifest(output_path, manifest)
+    written_manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written_manifest["stage5e_entry"]["entry"] == "stage5e_controlled_experimentation"
 
 
 def test_build_experiment_manifest_rejects_failed_stage5e_gate(tmp_path):
