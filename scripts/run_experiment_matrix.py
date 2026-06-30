@@ -35,6 +35,7 @@ def main() -> int:
             encoding="utf-8",
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
+        _remove_output_file(args.output)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -63,6 +64,12 @@ def _build_candidate_row(manifest: dict[str, Any], *, dry_run: bool) -> dict[str
             run_id,
         ],
     }
+
+
+def _remove_output_file(output: str) -> None:
+    output_path = Path(output)
+    if output_path.is_file():
+        output_path.unlink()
 
 
 if __name__ == "__main__":

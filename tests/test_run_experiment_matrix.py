@@ -80,6 +80,42 @@ def test_run_experiment_matrix_requires_config_artifact(tmp_path):
     assert not output_path.exists()
 
 
+def test_run_experiment_matrix_removes_stale_output_on_failure(tmp_path):
+    manifest = _manifest()
+    manifest["artifacts"] = {}
+    manifest_path = tmp_path / "manifest.json"
+    output_path = tmp_path / "commands.jsonl"
+    stale_row = {
+        "experiment_id": "old",
+        "run_id": "old-candidate",
+        "dry_run": True,
+        "primary_variable": "learning_rate",
+        "command": ["python", "old.py"],
+    }
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    output_path.write_text(json.dumps(stale_row) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_experiment_matrix.py",
+            "--manifest",
+            str(manifest_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "error: manifest artifact config is required" in result.stderr
+    assert not output_path.exists()
+
+
 def _manifest() -> dict:
     return {
         "schema_version": 1,
