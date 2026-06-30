@@ -49,20 +49,30 @@ def _build_candidate_row(manifest: dict[str, Any], *, dry_run: bool) -> dict[str
         raise ValueError("manifest artifact config is required")
 
     run_id = manifest["candidate_run_id"]
-    config_path = config["path"]
+    command = [
+        "python",
+        "scripts/run_sft_train.py",
+        "--config",
+        config["path"],
+        "--output-dir",
+        f"outputs/stage5e/{run_id}",
+    ]
+    for artifact_name, argument_name in (
+        ("sft_dataset", "--sft-dataset"),
+        ("eval_cards", "--eval-cards"),
+    ):
+        artifact = manifest["artifacts"].get(artifact_name)
+        if isinstance(artifact, dict) and artifact.get("path"):
+            command.extend([argument_name, artifact["path"]])
+    if dry_run:
+        command.append("--dry-run")
+
     return {
         "experiment_id": manifest["experiment_id"],
         "run_id": run_id,
         "dry_run": dry_run,
         "primary_variable": manifest["primary_variable"]["name"],
-        "command": [
-            "python",
-            "scripts/run_sft_train.py",
-            "--config",
-            config_path,
-            "--run-name",
-            run_id,
-        ],
+        "command": command,
     }
 
 

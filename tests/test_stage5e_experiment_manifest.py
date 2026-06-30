@@ -192,6 +192,140 @@ def test_build_stage5e_experiment_manifest_cli_writes_manifest(tmp_path):
     assert written_manifest["stage5e_entry"]["entry"] == STAGE5E_ENTRY_MARKER
 
 
+def test_build_stage5e_experiment_manifest_cli_records_controlled_variable(tmp_path):
+    stage5e_entry = _write_stage5e_entry(tmp_path)
+    artifact = _write_artifact(tmp_path)
+    output_path = tmp_path / "manifest.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_stage5e_experiment_manifest.py"),
+            "--experiment-id",
+            "exp-stage5e-001",
+            "--baseline-run-id",
+            "baseline-run",
+            "--candidate-run-id",
+            "candidate-run",
+            "--primary-variable-name",
+            "learning_rate",
+            "--primary-baseline-value",
+            "0.0001",
+            "--primary-candidate-value",
+            "0.0002",
+            "--controlled-variable",
+            "seed=20260628=20260628",
+            "--stage5e-entry-check",
+            str(stage5e_entry),
+            "--artifact",
+            f"config={artifact}",
+            "--paired-eval-json",
+            '{"metric": "win_rate"}',
+            "--output",
+            str(output_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    written_manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written_manifest["controlled_variables"] == [
+        {
+            "name": "seed",
+            "baseline_value": "20260628",
+            "candidate_value": "20260628",
+        }
+    ]
+
+
+def test_build_stage5e_experiment_manifest_cli_rejects_changed_controlled_variable(
+    tmp_path,
+):
+    stage5e_entry = _write_stage5e_entry(tmp_path)
+    artifact = _write_artifact(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_stage5e_experiment_manifest.py"),
+            "--experiment-id",
+            "exp-stage5e-001",
+            "--baseline-run-id",
+            "baseline-run",
+            "--candidate-run-id",
+            "candidate-run",
+            "--primary-variable-name",
+            "learning_rate",
+            "--primary-baseline-value",
+            "0.0001",
+            "--primary-candidate-value",
+            "0.0002",
+            "--controlled-variable",
+            "rank=8=16",
+            "--stage5e-entry-check",
+            str(stage5e_entry),
+            "--artifact",
+            f"config={artifact}",
+            "--paired-eval-json",
+            '{"metric": "win_rate"}',
+            "--output",
+            str(tmp_path / "manifest.json"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "controlled variable changed" in result.stderr
+
+
+def test_build_stage5e_experiment_manifest_cli_rejects_duplicate_controlled_variable(
+    tmp_path,
+):
+    stage5e_entry = _write_stage5e_entry(tmp_path)
+    artifact = _write_artifact(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_stage5e_experiment_manifest.py"),
+            "--experiment-id",
+            "exp-stage5e-001",
+            "--baseline-run-id",
+            "baseline-run",
+            "--candidate-run-id",
+            "candidate-run",
+            "--primary-variable-name",
+            "learning_rate",
+            "--primary-baseline-value",
+            "0.0001",
+            "--primary-candidate-value",
+            "0.0002",
+            "--controlled-variable",
+            "seed=13=13",
+            "--controlled-variable",
+            "seed=21=21",
+            "--stage5e-entry-check",
+            str(stage5e_entry),
+            "--artifact",
+            f"config={artifact}",
+            "--paired-eval-json",
+            '{"metric": "win_rate"}',
+            "--output",
+            str(tmp_path / "manifest.json"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "duplicate controlled variable name: seed" in result.stderr
+
+
 def test_build_stage5e_experiment_manifest_cli_rejects_malformed_artifact(tmp_path):
     stage5e_entry = _write_stage5e_entry(tmp_path)
 

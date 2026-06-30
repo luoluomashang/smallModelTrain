@@ -28,12 +28,19 @@ def main() -> int:
     parser.add_argument("--primary-candidate-value", required=True)
     parser.add_argument("--stage5e-entry-check", required=True)
     parser.add_argument("--artifact", action="append", default=[])
+    parser.add_argument(
+        "--controlled-variable",
+        action="append",
+        default=[],
+        help="name=baseline_value=candidate_value",
+    )
     parser.add_argument("--paired-eval-json", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
     try:
         artifacts = _parse_artifacts(args.artifact)
+        controlled_variables = _parse_controlled_variables(args.controlled_variable)
         paired_eval = json.loads(args.paired_eval_json)
         if not isinstance(paired_eval, dict):
             raise ValueError("paired eval JSON must be an object")
@@ -46,6 +53,7 @@ def main() -> int:
                 "baseline_value": args.primary_baseline_value,
                 "candidate_value": args.primary_candidate_value,
             },
+            controlled_variables=controlled_variables,
             stage5e_entry_check=args.stage5e_entry_check,
             artifact_paths=artifacts,
             paired_eval=paired_eval,
@@ -71,6 +79,33 @@ def _parse_artifacts(values: list[str]) -> dict[str, str]:
             raise ValueError(f"duplicate artifact name: {name}")
         artifacts[name] = path
     return artifacts
+
+
+def _parse_controlled_variables(values: list[str]) -> list[dict[str, str]]:
+    controlled_variables: list[dict[str, str]] = []
+    names: set[str] = set()
+    for value in values:
+        parts = value.split("=", 2)
+        if len(parts) != 3:
+            raise ValueError(
+                f"controlled variable must be name=baseline_value=candidate_value: {value}"
+            )
+        name, baseline_value, candidate_value = (part.strip() for part in parts)
+        if not name or not baseline_value or not candidate_value:
+            raise ValueError(
+                f"controlled variable must be name=baseline_value=candidate_value: {value}"
+            )
+        if name in names:
+            raise ValueError(f"duplicate controlled variable name: {name}")
+        names.add(name)
+        controlled_variables.append(
+            {
+                "name": name,
+                "baseline_value": baseline_value,
+                "candidate_value": candidate_value,
+            }
+        )
+    return controlled_variables
 
 
 if __name__ == "__main__":

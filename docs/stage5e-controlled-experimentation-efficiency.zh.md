@@ -22,10 +22,18 @@ python -m pytest -q
 
 ## 实验 manifest
 
+必备输入：
+
+- Stage 5E gate JSON，例如 `reports/stage5e_entry_check.json`。
+- 本轮候选训练 config，例如 `configs/sft_qlora_qwen3_4b_smoke_6144.yaml`。
+- Stage 5D rejection-sampling SFT 数据，例如 `data_sft/stage5d_rejection_sampling_sft.jsonl`。
+- 固定 eval cards，例如 `data_cards/eval_execution_cards_50.jsonl`。
+- 配对 judgments/metrics 的计划占位或已产物路径，例如 `reports/stage5e_paired_eval_report.md`。
+
 构建 experiment manifest：
 
 ```powershell
-python scripts/build_stage5e_experiment_manifest.py --experiment-id stage5e_lr_probe_001 --baseline-run-id stage5d_baseline --candidate-run-id stage5e_candidate_lr --primary-variable-name learning_rate --primary-baseline-value 1e-4 --primary-candidate-value 8e-5 --stage5e-entry-check reports/stage5e_entry_check.json --artifact config=configs/sft_qlora_qwen3_4b_smoke_6144.yaml --artifact sft_dataset=data_sft/stage5d_rejection_sampling_sft.jsonl --artifact eval_cards=data_cards/eval_execution_cards_50.jsonl --paired-eval-json '{"planned_report":"reports/stage5e_paired_eval_report.md"}' --output reports/stage5e_experiment_manifest.json
+python scripts/build_stage5e_experiment_manifest.py --experiment-id stage5e_lr_probe_001 --baseline-run-id stage5d_baseline --candidate-run-id stage5e_candidate_lr --primary-variable-name learning_rate --primary-baseline-value 1e-4 --primary-candidate-value 8e-5 --controlled-variable seed=20260628=20260628 --stage5e-entry-check reports/stage5e_entry_check.json --artifact config=configs/sft_qlora_qwen3_4b_smoke_6144.yaml --artifact sft_dataset=data_sft/stage5d_rejection_sampling_sft.jsonl --artifact eval_cards=data_cards/eval_execution_cards_50.jsonl --paired-eval-json '{"planned_report":"reports/stage5e_paired_eval_report.md","planned_judgments":"data_review/stage5e_paired_judgments.jsonl","planned_metrics":"outputs/stage5e/candidate_metrics.jsonl"}' --output reports/stage5e_experiment_manifest.json
 ```
 
 `--artifact name=path` 会把 config、SFT dataset、eval cards 等实验输入写入 manifest，并记录文件 hash。Manifest 只能记录一个 primary variable 的变化；controlled variables 必须在 baseline 和 candidate 中保持相同。比如本轮改 learning rate，就不能同时改 base model、LoRA rank、dataset、eval cards 或 generation params。
@@ -38,7 +46,7 @@ python scripts/build_stage5e_experiment_manifest.py --experiment-id stage5e_lr_p
 python scripts/run_experiment_matrix.py --manifest reports/stage5e_experiment_manifest.json --output reports/stage5e_experiment_commands.jsonl --dry-run
 ```
 
-Dry-run 只写出 experiment commands，不会启动训练，也不会运行 preference optimization。真正执行前要人工确认 manifest 中的 primary variable 和 controlled variables 仍然符合单变量实验边界。
+Dry-run 只写出 experiment commands，不会启动训练，也不会运行 preference optimization。使用 `--dry-run` 时，生成的 `run_sft_train.py` 命令也会带上 `--dry-run`，并使用实际支持的参数：`--config`、`--output-dir outputs/stage5e/<candidate_run_id>`，以及 manifest 中存在时的 `--sft-dataset` 和 `--eval-cards`。真正执行前要人工确认 manifest 中的 primary variable 和 controlled variables 仍然符合单变量实验边界。
 
 ## Paired Eval 报告
 

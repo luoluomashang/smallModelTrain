@@ -46,11 +46,46 @@ def test_run_experiment_matrix_writes_candidate_dry_run_command(tmp_path):
                 "scripts/run_sft_train.py",
                 "--config",
                 "configs/sft.yaml",
-                "--run-name",
-                "candidate",
+                "--output-dir",
+                "outputs/stage5e/candidate",
+                "--sft-dataset",
+                "data_sft/stage5d_rejection_sampling_sft.jsonl",
+                "--eval-cards",
+                "data_cards/eval_execution_cards_50.jsonl",
+                "--dry-run",
             ],
         }
     ]
+
+
+def test_run_experiment_matrix_generated_command_never_uses_run_name(tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    output_path = tmp_path / "commands.jsonl"
+    manifest_path.write_text(json.dumps(_manifest()) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_experiment_matrix.py",
+            "--manifest",
+            str(manifest_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+    ]
+    unsupported_arg = "--run" + "-name"
+    assert all(unsupported_arg not in row["command"] for row in rows)
 
 
 def test_run_experiment_matrix_requires_config_artifact(tmp_path):
@@ -152,7 +187,15 @@ def _manifest() -> dict:
             "config": {
                 "path": "configs/sft.yaml",
                 "sha256": "a" * 64,
-            }
+            },
+            "sft_dataset": {
+                "path": "data_sft/stage5d_rejection_sampling_sft.jsonl",
+                "sha256": "b" * 64,
+            },
+            "eval_cards": {
+                "path": "data_cards/eval_execution_cards_50.jsonl",
+                "sha256": "c" * 64,
+            },
         },
         "paired_eval": {"cards": ["baseline", "candidate"]},
         "boundary": "controlled_experiment_one_primary_variable",
