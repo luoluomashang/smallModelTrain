@@ -326,6 +326,51 @@ def test_build_stage5e_experiment_manifest_cli_rejects_duplicate_controlled_vari
     assert "duplicate controlled variable name: seed" in result.stderr
 
 
+def test_build_stage5e_experiment_manifest_cli_rejects_malformed_controlled_variable(
+    tmp_path,
+):
+    stage5e_entry = _write_stage5e_entry(tmp_path)
+    artifact = _write_artifact(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_stage5e_experiment_manifest.py"),
+            "--experiment-id",
+            "exp-stage5e-001",
+            "--baseline-run-id",
+            "baseline-run",
+            "--candidate-run-id",
+            "candidate-run",
+            "--primary-variable-name",
+            "learning_rate",
+            "--primary-baseline-value",
+            "0.0001",
+            "--primary-candidate-value",
+            "0.0002",
+            "--controlled-variable",
+            "seed=20260628",
+            "--stage5e-entry-check",
+            str(stage5e_entry),
+            "--artifact",
+            f"config={artifact}",
+            "--paired-eval-json",
+            '{"metric": "win_rate"}',
+            "--output",
+            str(tmp_path / "manifest.json"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert (
+        "controlled variable must be name=baseline_value=candidate_value"
+        in result.stderr
+    )
+
+
 def test_build_stage5e_experiment_manifest_cli_rejects_malformed_artifact(tmp_path):
     stage5e_entry = _write_stage5e_entry(tmp_path)
 
