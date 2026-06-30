@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from small_model_train.evaluation.experiment_manifest import file_sha256
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,7 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_run_experiment_matrix_writes_candidate_dry_run_command(tmp_path):
     manifest_path = tmp_path / "manifest.json"
     output_path = tmp_path / "commands.jsonl"
-    manifest_path.write_text(json.dumps(_manifest()) + "\n", encoding="utf-8")
+    manifest = _manifest(tmp_path)
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -45,13 +48,13 @@ def test_run_experiment_matrix_writes_candidate_dry_run_command(tmp_path):
                 "python",
                 "scripts/run_sft_train.py",
                 "--config",
-                "configs/sft.yaml",
+                manifest["artifacts"]["config"]["path"],
                 "--output-dir",
                 "outputs/stage5e/candidate",
                 "--sft-dataset",
-                "data_sft/stage5d_rejection_sampling_sft.jsonl",
+                manifest["artifacts"]["sft_dataset"]["path"],
                 "--eval-cards",
-                "data_cards/eval_execution_cards_50.jsonl",
+                manifest["artifacts"]["eval_cards"]["path"],
                 "--dry-run",
             ],
         }
@@ -61,7 +64,7 @@ def test_run_experiment_matrix_writes_candidate_dry_run_command(tmp_path):
 def test_run_experiment_matrix_generated_command_never_uses_run_name(tmp_path):
     manifest_path = tmp_path / "manifest.json"
     output_path = tmp_path / "commands.jsonl"
-    manifest_path.write_text(json.dumps(_manifest()) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(_manifest(tmp_path)) + "\n", encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -89,7 +92,7 @@ def test_run_experiment_matrix_generated_command_never_uses_run_name(tmp_path):
 
 
 def test_run_experiment_matrix_requires_config_artifact(tmp_path):
-    manifest = _manifest()
+    manifest = _manifest(tmp_path)
     manifest["artifacts"] = {}
     manifest_path = tmp_path / "manifest.json"
     output_path = tmp_path / "commands.jsonl"
@@ -117,7 +120,7 @@ def test_run_experiment_matrix_requires_config_artifact(tmp_path):
 
 
 def test_run_experiment_matrix_removes_stale_output_on_failure(tmp_path):
-    manifest = _manifest()
+    manifest = _manifest(tmp_path)
     manifest["artifacts"] = {}
     manifest_path = tmp_path / "manifest.json"
     output_path = tmp_path / "commands.jsonl"
@@ -152,6 +155,37 @@ def test_run_experiment_matrix_removes_stale_output_on_failure(tmp_path):
     assert not output_path.exists()
 
 
+def test_run_experiment_matrix_rejects_artifact_sha256_mismatch_and_removes_output(
+    tmp_path,
+):
+    manifest = _manifest(tmp_path)
+    manifest["artifacts"]["config"]["sha256"] = "0" * 64
+    manifest_path = tmp_path / "manifest.json"
+    output_path = tmp_path / "commands.jsonl"
+    output_path.write_text('{"stale": true}\n', encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_experiment_matrix.py",
+            "--manifest",
+            str(manifest_path),
+            "--output",
+            str(output_path),
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "error: artifact sha256 mismatch: config" in result.stderr
+    assert not output_path.exists()
+
+
 def test_remove_output_file_ignores_unlink_errors(tmp_path, monkeypatch):
     output_path = tmp_path / "commands.jsonl"
     output_path.write_text('{"stale": true}\n', encoding="utf-8")
@@ -165,7 +199,8 @@ def test_remove_output_file_ignores_unlink_errors(tmp_path, monkeypatch):
     module._remove_output_file(str(output_path))
 
 
-def _manifest() -> dict:
+def _manifest(tmp_path: Path) -> dict:
+    artifact_paths = _write_manifest_artifacts(tmp_path)
     return {
         "schema_version": 1,
         "created_at": "2026-06-30T00:00:00Z",
@@ -185,20 +220,34 @@ def _manifest() -> dict:
         },
         "artifacts": {
             "config": {
-                "path": "configs/sft.yaml",
-                "sha256": "a" * 64,
+                "path": str(artifact_paths["config"]),
+                "sha256": file_sha256(artifact_paths["config"]),
             },
             "sft_dataset": {
-                "path": "data_sft/stage5d_rejection_sampling_sft.jsonl",
-                "sha256": "b" * 64,
+                "path": str(artifact_paths["sft_dataset"]),
+                "sha256": file_sha256(artifact_paths["sft_dataset"]),
             },
             "eval_cards": {
-                "path": "data_cards/eval_execution_cards_50.jsonl",
-                "sha256": "c" * 64,
+                "path": str(artifact_paths["eval_cards"]),
+                "sha256": file_sha256(artifact_paths["eval_cards"]),
             },
         },
         "paired_eval": {"cards": ["baseline", "candidate"]},
         "boundary": "controlled_experiment_one_primary_variable",
+    }
+
+
+def _write_manifest_artifacts(tmp_path: Path) -> dict[str, Path]:
+    config = tmp_path / "sft.yaml"
+    sft_dataset = tmp_path / "sft.jsonl"
+    eval_cards = tmp_path / "eval_cards.jsonl"
+    config.write_text("learning_rate: 0.0002\n", encoding="utf-8")
+    sft_dataset.write_text('{"text": "train"}\n', encoding="utf-8")
+    eval_cards.write_text('{"id": "eval-1"}\n', encoding="utf-8")
+    return {
+        "config": config,
+        "sft_dataset": sft_dataset,
+        "eval_cards": eval_cards,
     }
 
 

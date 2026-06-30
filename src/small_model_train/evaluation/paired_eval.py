@@ -22,6 +22,16 @@ def summarize_paired_eval(
 
     baseline_ids = set(baseline_by_id)
     candidate_ids = set(candidate_by_id)
+    missing_baseline_ids = sorted(candidate_ids - baseline_ids)
+    missing_candidate_ids = sorted(baseline_ids - candidate_ids)
+    missing_messages = []
+    if missing_baseline_ids:
+        missing_messages.append(f"missing_baseline_ids={missing_baseline_ids}")
+    if missing_candidate_ids:
+        missing_messages.append(f"missing_candidate_ids={missing_candidate_ids}")
+    if missing_messages:
+        raise ValueError("; ".join(missing_messages))
+
     paired_ids = sorted(baseline_ids & candidate_ids)
     if not paired_ids:
         raise ValueError("paired eval requires at least one paired row")
@@ -41,6 +51,9 @@ def summarize_paired_eval(
         candidate_row = candidate_by_id[row_id]
         baseline_score = _metric_score(baseline_row)
         candidate_score = _metric_score(candidate_row)
+        if candidate_score < baseline_score:
+            regression_ids.append(row_id)
+
         if row_id in judgment_by_id:
             winner = judgment_by_id[row_id]["winner"]
             winner_source = "review"
@@ -58,8 +71,6 @@ def summarize_paired_eval(
             wins += 1
         elif winner == "baseline":
             losses += 1
-            if candidate_score < baseline_score:
-                regression_ids.append(row_id)
         else:
             ties += 1
 

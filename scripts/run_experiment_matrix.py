@@ -13,7 +13,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from small_model_train.evaluation.experiment_manifest import (  # noqa: E402
-    validate_experiment_manifest,
+    verify_experiment_manifest_artifacts,
 )
 
 
@@ -26,7 +26,7 @@ def main() -> int:
 
     try:
         manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
-        validate_experiment_manifest(manifest)
+        verify_experiment_manifest_artifacts(manifest)
         rows = [_build_candidate_row(manifest, dry_run=args.dry_run)]
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)

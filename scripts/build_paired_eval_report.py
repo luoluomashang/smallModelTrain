@@ -37,7 +37,9 @@ def main() -> int:
         report_path = Path(args.report_output)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(render_paired_eval_report(summary), encoding="utf-8")
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
+        _remove_output_file(args.summary_output)
+        _remove_output_file(args.report_output)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -50,6 +52,15 @@ def _read_required_jsonl(path: str) -> list[dict]:
     if not file_path.exists():
         raise ValueError(f"required input path does not exist: {file_path}")
     return read_jsonl(file_path)
+
+
+def _remove_output_file(output: str) -> None:
+    output_path = Path(output)
+    try:
+        if output_path.is_file():
+            output_path.unlink()
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

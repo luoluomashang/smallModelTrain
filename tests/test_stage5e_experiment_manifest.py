@@ -12,6 +12,7 @@ from small_model_train.evaluation.experiment_manifest import (
     build_experiment_manifest,
     file_sha256,
     validate_experiment_manifest,
+    verify_experiment_manifest_artifacts,
     write_experiment_manifest,
 )
 
@@ -149,6 +150,30 @@ def test_build_experiment_manifest_rejects_wrong_stage5e_entry_marker(tmp_path):
 def test_file_sha256_rejects_directory(tmp_path):
     with pytest.raises(ValueError, match="artifact file not found or not a file"):
         file_sha256(tmp_path)
+
+
+def test_verify_experiment_manifest_artifacts_checks_current_hashes(tmp_path):
+    stage5e_entry = _write_stage5e_entry(tmp_path)
+    artifact = _write_artifact(tmp_path)
+    manifest = build_experiment_manifest(
+        experiment_id="exp-stage5e-001",
+        baseline_run_id="baseline-run",
+        candidate_run_id="candidate-run",
+        primary_variable={
+            "name": "learning_rate",
+            "baseline_value": "0.0001",
+            "candidate_value": "0.0002",
+        },
+        stage5e_entry_check=stage5e_entry,
+        artifact_paths={"config": artifact},
+        paired_eval={},
+    )
+
+    assert verify_experiment_manifest_artifacts(manifest) == manifest
+
+    artifact.write_text('{"changed": true}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="artifact sha256 mismatch: config"):
+        verify_experiment_manifest_artifacts(manifest)
 
 
 def test_build_stage5e_experiment_manifest_cli_writes_manifest(tmp_path):
@@ -406,6 +431,49 @@ def test_build_stage5e_experiment_manifest_cli_rejects_malformed_artifact(tmp_pa
 
     assert result.returncode == 1
     assert "error: malformed artifact: config" in result.stderr
+
+
+def test_build_stage5e_experiment_manifest_cli_removes_stale_output_on_failure(
+    tmp_path,
+):
+    stage5e_entry = _write_stage5e_entry(tmp_path)
+    artifact = _write_artifact(tmp_path)
+    output_path = tmp_path / "manifest.json"
+    output_path.write_text('{"stale": true}\n', encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_stage5e_experiment_manifest.py"),
+            "--experiment-id",
+            "exp-stage5e-001",
+            "--baseline-run-id",
+            "baseline-run",
+            "--candidate-run-id",
+            "candidate-run",
+            "--primary-variable-name",
+            "learning_rate",
+            "--primary-baseline-value",
+            "0.0001",
+            "--primary-candidate-value",
+            "0.0002",
+            "--stage5e-entry-check",
+            str(stage5e_entry),
+            "--artifact",
+            f"config={artifact}",
+            "--paired-eval-json",
+            '{"metric": "win_rate"',
+            "--output",
+            str(output_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "error:" in result.stderr
+    assert not output_path.exists()
 
 
 def test_validate_experiment_manifest_rejects_changed_controlled_variable(tmp_path):

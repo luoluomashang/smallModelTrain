@@ -60,6 +60,7 @@ def main() -> int:
         )
         write_experiment_manifest(args.output, manifest)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
+        _remove_output_file(args.output)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -106,6 +107,15 @@ def _parse_controlled_variables(values: list[str]) -> list[dict[str, str]]:
             }
         )
     return controlled_variables
+
+
+def _remove_output_file(output: str) -> None:
+    output_path = Path(output)
+    try:
+        if output_path.is_file():
+            output_path.unlink()
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

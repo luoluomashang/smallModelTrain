@@ -116,6 +116,15 @@ def validate_experiment_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     return manifest
 
 
+def verify_experiment_manifest_artifacts(manifest: dict[str, Any]) -> dict[str, Any]:
+    validated = validate_experiment_manifest(manifest)
+    for name, artifact in validated["artifacts"].items():
+        actual_sha256 = file_sha256(artifact["path"])
+        if actual_sha256 != artifact["sha256"]:
+            raise ValueError(f"artifact sha256 mismatch: {name}")
+    return validated
+
+
 def write_experiment_manifest(path: str | Path, manifest: dict[str, Any]) -> None:
     validated = validate_experiment_manifest(manifest)
     output_path = Path(path)
