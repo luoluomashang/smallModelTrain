@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -116,6 +117,19 @@ def test_run_experiment_matrix_removes_stale_output_on_failure(tmp_path):
     assert not output_path.exists()
 
 
+def test_remove_output_file_ignores_unlink_errors(tmp_path, monkeypatch):
+    output_path = tmp_path / "commands.jsonl"
+    output_path.write_text('{"stale": true}\n', encoding="utf-8")
+    module = _load_run_experiment_matrix()
+
+    def raise_oserror(self):
+        raise OSError("locked")
+
+    monkeypatch.setattr(type(output_path), "unlink", raise_oserror)
+
+    module._remove_output_file(str(output_path))
+
+
 def _manifest() -> dict:
     return {
         "schema_version": 1,
@@ -143,3 +157,12 @@ def _manifest() -> dict:
         "paired_eval": {"cards": ["baseline", "candidate"]},
         "boundary": "controlled_experiment_one_primary_variable",
     }
+
+
+def _load_run_experiment_matrix():
+    script_path = REPO_ROOT / "scripts" / "run_experiment_matrix.py"
+    spec = importlib.util.spec_from_file_location("run_experiment_matrix", script_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module

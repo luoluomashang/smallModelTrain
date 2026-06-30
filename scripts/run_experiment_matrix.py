@@ -68,8 +68,11 @@ def _build_candidate_row(manifest: dict[str, Any], *, dry_run: bool) -> dict[str
 
 def _remove_output_file(output: str) -> None:
     output_path = Path(output)
-    if output_path.is_file():
-        output_path.unlink()
+    try:
+        if output_path.is_file():
+            output_path.unlink()
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":
