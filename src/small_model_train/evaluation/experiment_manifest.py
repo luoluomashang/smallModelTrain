@@ -11,14 +11,15 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 BOUNDARY = "controlled_experiment_one_primary_variable"
+STAGE5E_ENTRY_MARKER = "stage5e_controlled_experimentation"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def file_sha256(path: str | Path) -> str:
     artifact_path = Path(path)
-    if not artifact_path.exists():
-        raise ValueError(f"artifact missing: {artifact_path}")
+    if not artifact_path.is_file():
+        raise ValueError(f"artifact file not found or not a file: {artifact_path}")
 
     digest = hashlib.sha256()
     with artifact_path.open("rb") as handle:
@@ -53,7 +54,7 @@ def build_experiment_manifest(
         for name, path in artifact_paths.items()
     }
 
-    return {
+    manifest = {
         "schema_version": SCHEMA_VERSION,
         "created_at": _utc_now_iso(),
         "experiment_id": experiment_id,
@@ -70,6 +71,7 @@ def build_experiment_manifest(
         "paired_eval": copy.deepcopy(paired_eval),
         "boundary": BOUNDARY,
     }
+    return validate_experiment_manifest(manifest)
 
 
 def validate_experiment_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -167,6 +169,8 @@ def _validate_stage5e_entry(stage5e_entry: Any) -> None:
     if stage5e_entry.get("passed") is not True:
         raise ValueError("Stage 5E entry gate must pass")
     _require_non_empty_string(stage5e_entry.get("entry"), "stage5e_entry.entry")
+    if stage5e_entry["entry"] != STAGE5E_ENTRY_MARKER:
+        raise ValueError(f"Stage 5E entry gate marker must be {STAGE5E_ENTRY_MARKER}")
 
 
 def _validate_artifacts(artifacts: Any) -> None:
