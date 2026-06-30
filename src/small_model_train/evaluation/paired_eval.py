@@ -23,6 +23,12 @@ def summarize_paired_eval(
     baseline_ids = set(baseline_by_id)
     candidate_ids = set(candidate_by_id)
     paired_ids = sorted(baseline_ids & candidate_ids)
+    if not paired_ids:
+        raise ValueError("paired eval requires at least one paired row")
+
+    stale_judgment_ids = sorted(set(judgment_by_id) - set(paired_ids))
+    if stale_judgment_ids:
+        raise ValueError(f"judgment id not found in paired rows: {stale_judgment_ids[0]}")
 
     comparisons = []
     wins = 0

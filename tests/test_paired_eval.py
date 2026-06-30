@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from small_model_train.evaluation.paired_eval import (
     render_paired_eval_report,
     summarize_paired_eval,
@@ -50,6 +52,37 @@ def test_summarize_paired_eval_flags_candidate_regression_without_review():
     assert summary["losses"] == 1
     assert summary["regression_ids"] == ["card-1"]
     assert summary["comparisons"][0]["winner"] == "baseline"
+
+
+def test_summarize_paired_eval_rejects_judgment_id_outside_paired_rows():
+    with pytest.raises(
+        ValueError,
+        match="judgment id not found in paired rows: card-typo",
+    ):
+        summarize_paired_eval(
+            baseline_metrics=[
+                {"id": "card-1", "hard_gate_pass": True, "failure_types": []},
+            ],
+            candidate_metrics=[
+                {"id": "card-1", "hard_gate_pass": True, "failure_types": []},
+            ],
+            judgments=[
+                {"id": "card-typo", "winner": "candidate"},
+            ],
+        )
+
+
+def test_summarize_paired_eval_rejects_no_paired_rows():
+    with pytest.raises(ValueError, match="paired eval requires at least one paired row"):
+        summarize_paired_eval(
+            baseline_metrics=[
+                {"id": "baseline-only", "hard_gate_pass": True, "failure_types": []},
+            ],
+            candidate_metrics=[
+                {"id": "candidate-only", "hard_gate_pass": True, "failure_types": []},
+            ],
+            judgments=[],
+        )
 
 
 def test_render_paired_eval_report_keeps_counts_and_boundary():
@@ -150,6 +183,44 @@ def test_build_paired_eval_report_cli_reports_validation_errors(tmp_path):
 
     assert result.returncode == 1
     assert "error: duplicate baseline metric id: card-1" in result.stderr
+
+
+def test_build_paired_eval_report_cli_requires_existing_input_files(tmp_path):
+    baseline_metrics = tmp_path / "missing-baseline.jsonl"
+    candidate_metrics = tmp_path / "candidate.jsonl"
+    judgments = tmp_path / "judgments.jsonl"
+    summary_output = tmp_path / "summary.json"
+    report_output = tmp_path / "report.md"
+    _write_jsonl(
+        candidate_metrics,
+        [{"id": "card-1", "hard_gate_pass": True, "failure_types": []}],
+    )
+    _write_jsonl(judgments, [])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_paired_eval_report.py"),
+            "--baseline-metrics",
+            str(baseline_metrics),
+            "--candidate-metrics",
+            str(candidate_metrics),
+            "--judgments",
+            str(judgments),
+            "--summary-output",
+            str(summary_output),
+            "--report-output",
+            str(report_output),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"error: required input path does not exist: {baseline_metrics}" in result.stderr
+    assert not summary_output.exists()
+    assert not report_output.exists()
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

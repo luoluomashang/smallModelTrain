@@ -29,9 +29,9 @@ def main() -> int:
 
     try:
         summary = summarize_paired_eval(
-            baseline_metrics=read_jsonl(args.baseline_metrics),
-            candidate_metrics=read_jsonl(args.candidate_metrics),
-            judgments=read_jsonl(args.judgments),
+            baseline_metrics=_read_required_jsonl(args.baseline_metrics),
+            candidate_metrics=_read_required_jsonl(args.candidate_metrics),
+            judgments=_read_required_jsonl(args.judgments),
         )
         write_paired_eval_summary(args.summary_output, summary)
         report_path = Path(args.report_output)
@@ -43,6 +43,13 @@ def main() -> int:
 
     print(f"wrote Stage 5E paired eval report to {report_path}")
     return 0
+
+
+def _read_required_jsonl(path: str) -> list[dict]:
+    file_path = Path(path)
+    if not file_path.exists():
+        raise ValueError(f"required input path does not exist: {file_path}")
+    return read_jsonl(file_path)
 
 
 if __name__ == "__main__":
