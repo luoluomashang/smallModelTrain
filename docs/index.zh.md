@@ -54,6 +54,7 @@
 - [Stage 5C 正式章节执行卡与数据完整性指南](stage5c-formal-execution-cards-data-integrity.zh.md)：解释 ChapterExecutionCard、正式卡审批、数据 split、泄漏检查和 dataset manifest。
 - [Stage 5D 作者反馈与 AI 味降低指南](stage5d-author-feedback-ai-taste-reduction.zh.md)：解释 formal admission 修复、AI 味缺陷证据、same-plot 作者修订、rejection-sampling SFT 候选和 same-plot preference 候选。
 - [Stage 5E 受控实验与效率指南](stage5e-controlled-experimentation-efficiency.zh.md)：解释 Stage 5E manifest、paired eval、dry-run 实验矩阵和单变量实验边界。
+- [Stage 5 closure report](../reports/stage5_closure_report.md)：记录 Stage 5 总体验收闭环和最终验证证据入口。
 - [Stage 4 决策日志](stage4-decision-log.zh.md)：记录当前是否允许扩大训练规模，以及原因。
 - [Stage 4.1 Full50 归档](stage4-1-full50-archive.zh.md)：归档 full50 运行证据。
 - [Stage 4.1 Full50 Manual Review Findings](stage4-1-full50-manual-review.zh.md)：记录人工复核发现。

@@ -28,7 +28,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5A: Evidence Chain Hardening
 
-**Status:** Current executable stage.
+**Status:** Implemented and covered by Stage 5 closure artifacts.
 
 **Detailed plan:** `docs/superpowers/plans/2026-06-23-stage5a-evidence-chain-hardening.md`
 
@@ -58,7 +58,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5B: Style Contract Closure
 
-**Status:** Forward index only. Do not implement until Stage 5A exits.
+**Status:** Implemented as full-corpus StyleContract artifacts; formal SFT closure uses the separate approved Stage 5C closure probe recorded in `reports/stage5_closure_report.md`.
 
 **Future plan file:** `docs/superpowers/plans/2026-06-23-stage5b-style-contract-closure.md`
 
@@ -104,7 +104,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5C: Formal Execution Cards And Data Integrity
 
-**Status:** Forward index only. Do not implement until Stage 5B style contract assets exist.
+**Status:** Implemented as formal data-integrity gates plus a minimal approved closure-probe dataset and manifest recorded in `reports/stage5_closure_report.md`.
 
 **Future plan file:** `docs/superpowers/plans/2026-06-23-stage5c-formal-execution-cards-data-integrity.md`
 
@@ -205,7 +205,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5E: Controlled Experimentation And Efficiency
 
-**Status:** Blocked until `reports/stage5e_entry_check.json` exists with `"passed": true`.
+**Status:** Control-plane implemented. Overall Stage 5 closure is recorded in `reports/stage5_closure_report.md` and requires Task 7 final verification evidence.
 
 **Plan file:** `docs/superpowers/plans/2026-06-28-stage5e-controlled-experimentation-efficiency.md`
 
@@ -256,13 +256,9 @@ These gates apply to every stage after Stage 5A:
 
 ## Current Execution Decision
 
-Do not execute Stage 5E until the Stage 5D closure plan passes:
+Stage 5E gate and control-plane artifacts exist. Overall Stage 5 closure is governed by `reports/stage5_closure_report.md` and still depends on Task 7 final verification evidence.
 
-```powershell
-python scripts/check_stage5e_entry.py --summary reports/stage5d_review_summary.json --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --generation-records outputs/stage5d_generation_records.jsonl --output reports/stage5e_entry_check.json
-```
-
-After that command exits 0 and full pytest passes, Stage 5E planning may begin.
+This roadmap status does not imply model-quality acceptance, real preference optimization, production-scale formal training, or an efficiency win.
 
 ---
 
@@ -270,4 +266,4 @@ After that command exits 0 and full pytest passes, Stage 5E planning may begin.
 
 - Spec coverage: all uploaded review phases A-E have a repo-native stage, future plan filename, purpose, planned scope, entry criteria, and exit criteria.
 - Placeholder scan: later stages are intentionally forward indexes, not implementation placeholders; each names concrete future files and gates.
-- Type consistency: Stage naming follows `5A` through `5E`, and Stage 5A remains the only current executable implementation plan.
+- Type consistency: Stage naming follows `5A` through `5E`; overall Stage 5 closure is recorded in `reports/stage5_closure_report.md`.
