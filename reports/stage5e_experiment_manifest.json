@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-07-01T16:30:00Z",
+  "experiment_id": "stage5e_control_plane_probe_001",
+  "baseline_run_id": "stage5d_baseline",
+  "candidate_run_id": "stage5e_candidate_lr_probe",
+  "primary_variable": {
+    "name": "learning_rate",
+    "baseline_value": "1e-4",
+    "candidate_value": "8e-5"
+  },
+  "controlled_variables": [
+    {
+      "name": "seed",
+      "baseline_value": "20260628",
+      "candidate_value": "20260628"
+    }
+  ],
+  "stage5e_entry": {
+    "path": "reports\\stage5e_entry_check.json",
+    "passed": true,
+    "entry": "stage5e_controlled_experimentation"
+  },
+  "artifacts": {
+    "config": {
+      "path": "configs/sft_qlora_qwen3_4b_smoke_6144.yaml",
+      "sha256": "da8d1088c47cc4df8c661b7ccbcc455f9a9a962c2dc4da4fb0197bfaec53f4d8"
+    },
+    "sft_dataset": {
+      "path": "data_sft/stage5d_rejection_sampling_sft.jsonl",
+      "sha256": "0049ebfdbf8f60af8e9ceb6e07bdf9ad1b75e795e7203b856093a436ecafc869"
+    },
+    "eval_cards": {
+      "path": "data_cards/eval_cards_50.jsonl",
+      "sha256": "62ad5d174b836d5806ba138ede4132bb6d69193669886ee90233071a0f6b1546"
+    },
+    "paired_eval_summary": {
+      "path": "reports/stage5e_paired_eval_summary.json",
+      "sha256": "7d2b5fb0a6b60fc5d32b09b7c87919973a24ed2cd8d65e4f71ff60c745e5331d"
+    }
+  },
+  "paired_eval": {
+    "summary": "reports/stage5e_paired_eval_summary.json",
+    "report": "reports/stage5e_paired_eval_report.md",
+    "boundary": "paired_eval_no_training",
+    "scope": "control_plane_probe_no_training_claim",
+    "eval_artifact": "data_cards/eval_cards_50.jsonl"
+  },
+  "boundary": "controlled_experiment_one_primary_variable"
+}
