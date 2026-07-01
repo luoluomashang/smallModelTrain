@@ -171,7 +171,10 @@ Expected: command exits `0` and writes the closure-specific approved StyleContra
 ```powershell
 @'
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, "src")
 
 from small_model_train.schemas.chapter_execution_card import build_chapter_execution_card, write_chapter_execution_cards
 from small_model_train.style_contract import read_style_contract_asset
