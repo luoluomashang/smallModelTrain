@@ -65,12 +65,16 @@ python scripts/build_paired_eval_report.py --baseline-metrics outputs/stage5e/ba
 python scripts/run_experiment_matrix.py --manifest reports/stage5e_experiment_manifest.json --output reports/stage5e_experiment_commands.jsonl --dry-run
 python -c "from pathlib import Path; b=Path('configs/sft_qlora_qwen3_4b_smoke_6144.yaml').read_text(encoding='utf-8'); c=Path('configs/stage5e_candidate_lr_probe.yaml').read_text(encoding='utf-8'); assert 'learning_rate: 3.0e-5' in b; assert 'learning_rate: 8e-5' in c; print('baseline and candidate learning rates verified')"
 python -c "import json; rows=[json.loads(l) for l in open('reports/stage5e_experiment_commands.jsonl',encoding='utf-8')]; assert len(rows)==1; cmd=rows[0]['command']; assert rows[0]['dry_run'] is True; assert '--dry-run' in cmd; assert 'configs/stage5e_candidate_lr_probe.yaml' in cmd; print('stage5e matrix candidate config dry-run verified')"
-rg -n "Stage 5A remains the only current executable|Forward index only|Blocked until `reports/stage5e_entry_check.json`|Current executable stage" docs/superpowers/plans/2026-06-23-small-model-train-full-roadmap.md
+$stalePattern = 'Stage 5A remains the only current executable|Forward index only|Blocked until `reports/stage5e_entry_check.json`|Current executable stage'
+$staleMatches = rg -n $stalePattern docs/superpowers/plans/2026-06-23-small-model-train-full-roadmap.md
+if ($LASTEXITCODE -eq 0) { $staleMatches; throw 'stale Stage 5 roadmap status remains' }
+if ($LASTEXITCODE -ne 1) { throw 'roadmap stale-status scan failed' }
+'roadmap stale-status scan verified'
 python -m pytest -q
 git diff --check
 ```
 
-For the roadmap stale-status scan, no matches are expected; `rg` exit code `1` is acceptable when there are no matches.
+For the roadmap stale-status scan, no stale matches are expected; the gate prints `roadmap stale-status scan verified` when no stale matches remain.
 
 ## Final Evidence
 
