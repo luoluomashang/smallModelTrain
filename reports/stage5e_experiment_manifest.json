@@ -1,19 +1,29 @@
 {
   "schema_version": 1,
-  "created_at": "2026-07-01T16:30:00Z",
+  "created_at": "2026-07-01T16:42:23Z",
   "experiment_id": "stage5e_control_plane_probe_001",
   "baseline_run_id": "stage5d_baseline",
   "candidate_run_id": "stage5e_candidate_lr_probe",
   "primary_variable": {
     "name": "learning_rate",
-    "baseline_value": "1e-4",
+    "baseline_value": "3.0e-5",
     "candidate_value": "8e-5"
   },
   "controlled_variables": [
     {
-      "name": "seed",
-      "baseline_value": "20260628",
-      "candidate_value": "20260628"
+      "name": "cutoff_len",
+      "baseline_value": "6144",
+      "candidate_value": "6144"
+    },
+    {
+      "name": "lora_rank",
+      "baseline_value": "16",
+      "candidate_value": "16"
+    },
+    {
+      "name": "dataset",
+      "baseline_value": "sft_chapter_v1",
+      "candidate_value": "sft_chapter_v1"
     }
   ],
   "stage5e_entry": {
@@ -22,9 +32,13 @@
     "entry": "stage5e_controlled_experimentation"
   },
   "artifacts": {
-    "config": {
+    "baseline_config": {
       "path": "configs/sft_qlora_qwen3_4b_smoke_6144.yaml",
       "sha256": "da8d1088c47cc4df8c661b7ccbcc455f9a9a962c2dc4da4fb0197bfaec53f4d8"
+    },
+    "config": {
+      "path": "configs/stage5e_candidate_lr_probe.yaml",
+      "sha256": "a926bea033b351f9b7778b315374856d5e9761097581d09c45aa0f0246e7d7d5"
     },
     "sft_dataset": {
       "path": "data_sft/stage5d_rejection_sampling_sft.jsonl",

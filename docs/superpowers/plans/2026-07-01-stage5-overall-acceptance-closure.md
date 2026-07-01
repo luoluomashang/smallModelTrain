@@ -392,6 +392,7 @@ Expected: commit succeeds.
 - Input: `data_sft/stage5d_rejection_sampling_sft.jsonl`
 - Input: `data_cards/eval_cards_50.jsonl`
 - Input: `reports/stage5e_paired_eval_summary.json`
+- Generate: `configs/stage5e_candidate_lr_probe.yaml`
 - Generate: `reports/stage5e_experiment_manifest.json`
 - Generate: `reports/stage5e_experiment_commands.jsonl`
 - Verify: `tests/test_stage5e_experiment_manifest.py`, `tests/test_run_experiment_matrix.py`
@@ -407,7 +408,7 @@ Expected: `Stage 5E entry gate passed; wrote reports\stage5e_entry_check.json`.
 - [ ] **Step 2: Build the experiment manifest**
 
 ```powershell
-python scripts/build_stage5e_experiment_manifest.py --experiment-id stage5e_control_plane_probe_001 --baseline-run-id stage5d_baseline --candidate-run-id stage5e_candidate_lr_probe --primary-variable-name learning_rate --primary-baseline-value 1e-4 --primary-candidate-value 8e-5 --controlled-variable seed=20260628=20260628 --stage5e-entry-check reports/stage5e_entry_check.json --artifact config=configs/sft_qlora_qwen3_4b_smoke_6144.yaml --artifact sft_dataset=data_sft/stage5d_rejection_sampling_sft.jsonl --artifact eval_cards=data_cards/eval_cards_50.jsonl --artifact paired_eval_summary=reports/stage5e_paired_eval_summary.json --paired-eval-json '{"summary":"reports/stage5e_paired_eval_summary.json","report":"reports/stage5e_paired_eval_report.md","boundary":"paired_eval_no_training","scope":"control_plane_probe_no_training_claim","eval_artifact":"data_cards/eval_cards_50.jsonl"}' --output reports/stage5e_experiment_manifest.json
+python scripts/build_stage5e_experiment_manifest.py --experiment-id stage5e_control_plane_probe_001 --baseline-run-id stage5d_baseline --candidate-run-id stage5e_candidate_lr_probe --primary-variable-name learning_rate --primary-baseline-value 3.0e-5 --primary-candidate-value 8e-5 --controlled-variable cutoff_len=6144=6144 --controlled-variable lora_rank=16=16 --controlled-variable dataset=sft_chapter_v1=sft_chapter_v1 --stage5e-entry-check reports/stage5e_entry_check.json --artifact baseline_config=configs/sft_qlora_qwen3_4b_smoke_6144.yaml --artifact config=configs/stage5e_candidate_lr_probe.yaml --artifact sft_dataset=data_sft/stage5d_rejection_sampling_sft.jsonl --artifact eval_cards=data_cards/eval_cards_50.jsonl --artifact paired_eval_summary=reports/stage5e_paired_eval_summary.json --paired-eval-json '{"summary":"reports/stage5e_paired_eval_summary.json","report":"reports/stage5e_paired_eval_report.md","boundary":"paired_eval_no_training","scope":"control_plane_probe_no_training_claim","eval_artifact":"data_cards/eval_cards_50.jsonl"}' --output reports/stage5e_experiment_manifest.json
 ```
 
 Expected: `wrote Stage 5E experiment manifest to reports\stage5e_experiment_manifest.json`.
@@ -439,6 +440,7 @@ Expected: all tests pass.
 - [ ] **Step 6: Commit**
 
 ```powershell
+git add configs/stage5e_candidate_lr_probe.yaml
 git add -f reports/stage5e_entry_check.json reports/stage5e_experiment_manifest.json reports/stage5e_experiment_commands.jsonl
 git commit -m "chore: generate stage5e control-plane closure artifacts"
 ```
@@ -492,6 +494,7 @@ This closure does not claim model-quality improvement, efficiency win, preferenc
   - `reports/stage5d_review_report.md`
   - `outputs/stage5d_generation_records.jsonl`
 - Stage 5E control-plane artifacts:
+  - `configs/stage5e_candidate_lr_probe.yaml`
   - `reports/stage5e_entry_check.json`
   - `outputs/stage5e/baseline_metrics.jsonl`
   - `outputs/stage5e/candidate_metrics.jsonl`
@@ -621,6 +624,7 @@ $paths = @(
   'reports/stage5d_review_summary.json',
   'reports/stage5d_review_report.md',
   'outputs/stage5d_generation_records.jsonl',
+  'configs/stage5e_candidate_lr_probe.yaml',
   'reports/stage5e_entry_check.json',
   'outputs/stage5e/baseline_metrics.jsonl',
   'outputs/stage5e/candidate_metrics.jsonl',
