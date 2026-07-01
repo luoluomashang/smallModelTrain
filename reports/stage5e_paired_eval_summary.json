@@ -1,0 +1,21 @@
+{
+  "paired_rows": 1,
+  "wins": 0,
+  "losses": 0,
+  "ties": 1,
+  "missing_baseline_ids": [],
+  "missing_candidate_ids": [],
+  "regression_ids": [],
+  "comparisons": [
+    {
+      "id": "stage5e-control-plane-probe-001",
+      "baseline_score": 10,
+      "candidate_score": 10,
+      "baseline_failures": [],
+      "candidate_failures": [],
+      "winner": "tie",
+      "winner_source": "review"
+    }
+  ],
+  "boundary": "paired_eval_no_training"
+}
