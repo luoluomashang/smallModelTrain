@@ -52,6 +52,7 @@ Stage 5E control-plane artifacts:
 - `reports/stage5e_paired_eval_report.md`
 - `reports/stage5e_experiment_manifest.json`
 - `reports/stage5e_experiment_commands.jsonl`
+- Note: paired-eval rows and reports are synthetic closure-probe/plumbing evidence only. They do not represent real model comparison, author judgment, model-quality improvement, or preference optimization.
 - Note: `data_cards/eval_cards_50.jsonl` is recorded as fixed eval artifact in the control-plane probe. This does not claim stricter `data_cards/eval_execution_cards_50.jsonl` exists or validates.
 
 ## Acceptance Commands
@@ -64,9 +65,12 @@ python scripts/build_paired_eval_report.py --baseline-metrics outputs/stage5e/ba
 python scripts/run_experiment_matrix.py --manifest reports/stage5e_experiment_manifest.json --output reports/stage5e_experiment_commands.jsonl --dry-run
 python -c "from pathlib import Path; b=Path('configs/sft_qlora_qwen3_4b_smoke_6144.yaml').read_text(encoding='utf-8'); c=Path('configs/stage5e_candidate_lr_probe.yaml').read_text(encoding='utf-8'); assert 'learning_rate: 3.0e-5' in b; assert 'learning_rate: 8e-5' in c; print('baseline and candidate learning rates verified')"
 python -c "import json; rows=[json.loads(l) for l in open('reports/stage5e_experiment_commands.jsonl',encoding='utf-8')]; assert len(rows)==1; cmd=rows[0]['command']; assert rows[0]['dry_run'] is True; assert '--dry-run' in cmd; assert 'configs/stage5e_candidate_lr_probe.yaml' in cmd; print('stage5e matrix candidate config dry-run verified')"
+rg -n "Stage 5A remains the only current executable|Forward index only|Blocked until `reports/stage5e_entry_check.json`|Current executable stage" docs/superpowers/plans/2026-06-23-small-model-train-full-roadmap.md
 python -m pytest -q
 git diff --check
 ```
+
+For the roadmap stale-status scan, no matches are expected; `rg` exit code `1` is acceptable when there are no matches.
 
 ## Final Evidence
 
