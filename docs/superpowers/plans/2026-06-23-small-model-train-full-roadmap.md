@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Map every phase from the uploaded design review into a complete project roadmap, while keeping only the current evidence-chain stage detailed enough for immediate implementation.
+**Goal:** Map every phase from the uploaded design review into a complete project roadmap and record the current Stage 5 closure state.
 
-**Architecture:** Treat the uploaded review as the source-of-truth strategy and split it into sequential delivery stages. Stage 5A is the executable plan; later stages are indexed as forward plans with goals, inputs, future plan files, and exit criteria so they can be expanded after Stage 5A evidence is reliable.
+**Architecture:** Treat the uploaded review as the source-of-truth strategy and split it into sequential delivery stages. Stage 5A-5E now have implemented engineering, control-plane, and data-integrity closure artifacts. Overall Stage 5 closure is tracked in `reports/stage5_closure_report.md` and still depends on Task 7 final verification evidence; this does not imply model-quality acceptance, production-scale formal training, real preference optimization, or an efficiency win.
 
 **Tech Stack:** Python 3.10+, pytest, JSON/JSONL, Markdown docs, Transformers/PEFT worker path, LLaMA-Factory configs, current `small_model_train` package layout.
 
