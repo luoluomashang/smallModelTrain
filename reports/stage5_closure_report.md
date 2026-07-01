@@ -2,7 +2,7 @@
 
 ## Decision
 
-Stage 5 acceptance is pending final Task 7 verification evidence. Stage 5 is accepted only after all acceptance commands listed below pass and final evidence is recorded.
+Stage 5 is accepted as engineering/control-plane/data-integrity closure as of this report after the final verification evidence below passed.
 
 This closure report defines the Stage 5 acceptance boundary for engineering/control-plane/data-integrity closure only. It does not claim model-quality improvement, efficiency win, real preference optimization, DPO/SimPO/ORPO/KTO/reward-model training, sealed-eval success, author-acceptance improvement, production-scale formal training, or `eval_execution_cards_50.jsonl` validation.
 
@@ -78,4 +78,30 @@ For the roadmap stale-status scan, no stale matches are expected; the gate print
 
 ## Final Evidence
 
-Pending Task 7 final verification.
+Task 7 final verification was run fresh in `E:\codex\smallModelTrain\.worktrees\stage5-overall-acceptance-closure`.
+
+- Required artifact existence check:
+  - Output: `all required Stage 5 closure artifacts exist`
+- Stage 5E gate:
+  - Command: `python scripts/check_stage5e_entry.py --summary reports/stage5d_review_summary.json --review-records data_review/stage5d_review_records.jsonl --revisions data_review/stage5d_revisions.jsonl --rejection-sampling-rows data_sft/stage5d_rejection_sampling_sft.jsonl --preference-rows data_pref/stage5d_same_plot_preference.jsonl --generation-records outputs/stage5d_generation_records.jsonl --output reports/stage5e_entry_check.json`
+  - Output: `Stage 5E entry gate passed; wrote reports\stage5e_entry_check.json`
+- Paired eval report rebuild:
+  - Command: `python scripts/build_paired_eval_report.py --baseline-metrics outputs/stage5e/baseline_metrics.jsonl --candidate-metrics outputs/stage5e/candidate_metrics.jsonl --judgments data_review/stage5e_paired_judgments.jsonl --summary-output reports/stage5e_paired_eval_summary.json --report-output reports/stage5e_paired_eval_report.md`
+  - Output: `wrote Stage 5E paired eval report to reports\stage5e_paired_eval_report.md`
+- Dry-run matrix rebuild:
+  - Command: `python scripts/run_experiment_matrix.py --manifest reports/stage5e_experiment_manifest.json --output reports/stage5e_experiment_commands.jsonl --dry-run`
+  - Output: `wrote 1 Stage 5E experiment commands to reports/stage5e_experiment_commands.jsonl`
+- Learning-rate config check:
+  - Output: `baseline and candidate learning rates verified`
+- Matrix candidate config dry-run check:
+  - Output: `stage5e matrix candidate config dry-run verified`
+- Roadmap stale-status scan:
+  - Output: `roadmap stale-status scan verified`
+- Expanded roadmap semantic scan:
+  - Output: no matches; `rg` exited with code 1 as expected.
+- Full test suite:
+  - Output: `596 passed in 9.38s`
+- Git diff whitespace check before recording evidence:
+  - Output: no output; `git diff --check` exited with code 0.
+
+This acceptance remains limited to engineering/control-plane/data-integrity closure. It does not claim model-quality improvement, efficiency win, real preference optimization, DPO/SimPO/ORPO/KTO/reward-model training, sealed-eval success, author-acceptance improvement, production-scale formal training, or `eval_execution_cards_50.jsonl` validation.
