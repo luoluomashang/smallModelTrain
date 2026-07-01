@@ -280,10 +280,10 @@ True
 - [ ] **Step 6: Inspect manifest boundary fields**
 
 ```powershell
-python -c "import json; p='data_sft/sft_chapter_formal_manifest.json'; o=json.load(open(p,encoding='utf-8')); print(o.keys()); print(o.get('style_contract')); print(o.get('split_manifest'))"
+python -c "import json; p='data_sft/sft_chapter_formal_manifest.json'; o=json.load(open(p,encoding='utf-8')); assert o.get('style_contract_id'); assert o.get('style_contract_sha256'); print(o.keys()); print(o.get('style_contract_id')); print(o.get('style_contract_sha256')); print(o.get('split_manifest'))"
 ```
 
-Expected: output includes manifest keys, a non-empty style contract section, and split counts.
+Expected: output includes manifest keys, non-empty `style_contract_id` and `style_contract_sha256` values, and split counts.
 
 - [ ] **Step 7: Run focused formal dataset tests**
 
