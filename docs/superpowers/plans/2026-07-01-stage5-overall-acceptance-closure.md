@@ -13,9 +13,19 @@
 ## File Structure
 
 - Generate or refresh: `data_style/style_metrics_author_main_v1.json`
-  - Stage 5B style metrics artifact required by public docs.
+  - Stage 5B full-corpus style metrics artifact required by public docs.
+- Generate: `data_clean/stage5_closure_formal_corpus.jsonl`
+  - Minimal closure-specific formal corpus used only for engineering/data-integrity acceptance.
+- Generate: `data_style/stage5_closure_style_contract_author_main_v1.json`
+  - Approved closure-specific StyleContract built from the minimal closure corpus.
+- Generate: `data_style/stage5_closure_style_metrics_author_main_v1.json`
+  - Closure-specific style metrics for the approved formal probe contract.
+- Generate: `data_style/stage5_closure_style_contract.md`
+  - Markdown rendering of the closure-specific StyleContract.
+- Generate: `data_cards/stage5_closure_chapter_execution_cards_approved.jsonl`
+  - Approved closure-specific ChapterExecutionCard rows with fresh source and card hashes.
 - Generate or refresh: `data_sft/sft_chapter_formal.jsonl`
-  - Formal SFT dataset built from approved/frozen execution cards.
+  - Formal SFT dataset built from the minimal closure-specific approved card and corpus.
 - Generate or refresh: `data_sft/dataset_info_formal.json`
   - LLaMA-Factory dataset metadata for the formal dataset.
 - Generate or refresh: `data_sft/sft_chapter_formal_manifest.json`
@@ -99,22 +109,153 @@ Expected: commit succeeds.
 ### Task 2: Generate Stage 5C Formal Dataset Manifest
 
 **Files:**
+- Generate: `data_clean/stage5_closure_formal_corpus.jsonl`
+- Generate: `data_style/stage5_closure_style_contract_author_main_v1.json`
+- Generate: `data_style/stage5_closure_style_metrics_author_main_v1.json`
+- Generate: `data_style/stage5_closure_style_contract.md`
+- Generate: `data_cards/stage5_closure_chapter_execution_cards_approved.jsonl`
 - Generate: `data_sft/sft_chapter_formal.jsonl`
 - Generate: `data_sft/dataset_info_formal.json`
 - Generate: `data_sft/sft_chapter_formal_manifest.json`
 - Verify: `tests/test_sft_builder.py`, `tests/test_dataset_manifest.py`
 
-- [ ] **Step 1: Run the formal SFT build command**
+This task is a minimal formal closure probe for engineering/data-integrity acceptance. It proves the formal SFT gates can consume a self-consistent approved StyleContract, corpus, card, dataset, and manifest. It is not a 100-500 chapter formal training dataset and is not evidence of model quality, author acceptance, or training readiness at production scale.
+
+Keep the Task 1 full-corpus artifact `data_style/style_contract_author_main_v1.json` as a `pending_review` StyleContract. It is useful Stage 5B documentation evidence, but it must not be used to enable formal SFT gates.
+
+- [ ] **Step 1: Create a minimal closure-specific formal corpus**
 
 ```powershell
-python scripts/build_sft_dataset.py --cards data_cards/chapter_execution_cards_approved.jsonl --chapters data_clean/chapters_split.jsonl --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --style-contract-json data_style/style_contract_author_main_v1.json --dataset-manifest-output data_sft/sft_chapter_formal_manifest.json
+@'
+import json
+from pathlib import Path
+
+source_path = Path("data_clean/chapters_split.jsonl")
+output_path = Path("data_clean/stage5_closure_formal_corpus.jsonl")
+
+selected = None
+with source_path.open("r", encoding="utf-8") as handle:
+    for line in handle:
+        row = json.loads(line)
+        if row.get("quality_tag") == "A" and row.get("split") == "train" and row.get("text"):
+            selected = dict(row)
+            break
+
+if selected is None:
+    raise SystemExit("no train quality_tag=A row found for closure formal probe")
+
+selected["id"] = "stage5_closure_formal_probe_001"
+selected["split"] = "train"
+selected["quality_tag"] = "A"
+
+output_path.parent.mkdir(parents=True, exist_ok=True)
+with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+    handle.write(json.dumps(selected, ensure_ascii=False) + "\n")
+
+print(f"wrote closure formal corpus to {output_path}")
+'@ | python -
 ```
 
-Expected: command exits `0` and writes formal dataset rows plus manifest.
+Expected: command exits `0` and writes one train, quality-tag `A` chapter row.
 
-- [ ] **Step 2: Verify required files exist**
+- [ ] **Step 2: Build an approved closure-specific StyleContract**
 
 ```powershell
+python scripts/build_style_contract.py --chapters data_clean/stage5_closure_formal_corpus.jsonl --contract-json-output data_style/stage5_closure_style_contract_author_main_v1.json --contract-output data_style/stage5_closure_style_contract.md --metrics-output data_style/stage5_closure_style_metrics_author_main_v1.json --style-contract-id author_main_v1 --approval-status approved --author-notes "Minimal Stage 5 closure formal probe for engineering/data-integrity acceptance only; not 100-500 chapter formal training and not model-quality proof."
+```
+
+Expected: command exits `0` and writes the closure-specific approved StyleContract, Markdown contract, and metrics.
+
+- [ ] **Step 3: Create an approved closure-specific ChapterExecutionCard**
+
+```powershell
+@'
+import json
+from pathlib import Path
+
+from small_model_train.schemas.chapter_execution_card import build_chapter_execution_card, write_chapter_execution_cards
+from small_model_train.style_contract import read_style_contract_asset
+
+chapters_path = Path("data_clean/stage5_closure_formal_corpus.jsonl")
+contract_path = Path("data_style/stage5_closure_style_contract_author_main_v1.json")
+cards_path = Path("data_cards/stage5_closure_chapter_execution_cards_approved.jsonl")
+
+chapter = json.loads(chapters_path.read_text(encoding="utf-8").splitlines()[0])
+contract = read_style_contract_asset(contract_path)
+
+card = build_chapter_execution_card(
+    card_id="stage5_closure_card_001",
+    chapter_id=chapter["id"],
+    card_status="approved",
+    style_contract_id=contract["style_contract_id"],
+    style_contract_sha256=contract["contract_sha256"],
+    source_chapter_text=chapter["text"],
+    target_platform="formal_sft_closure_probe",
+    genre_tags=["stage5", "closure_probe", "engineering_acceptance"],
+    hard_constraints={
+        "must_include": ["清楚的开场状态", "中段压力升级", "章末余波"],
+        "must_not_include": ["提纲", "小标题", "创作说明"],
+        "continuity_facts": ["承接上一章压力，以正文推进场景和人物选择。"],
+        "forbidden_future_facts": ["不得引用后续章节或评测集内容。"],
+        "style_bans": ["避免 AI 味解释腔和模板化总结。"],
+    },
+    execution_plan={
+        "chapter_goal": "以动作、场景反应和短对白完成一个最小闭环章节。",
+        "conflict_beat": "核心人物遇到阻力后调整行动。",
+        "payoff_beat": "结尾留下可继续推进的余波。",
+        "chapter_structure": [
+            {"step": 1, "name": "承接", "goal": "交代开场压力。", "estimated_chars": "400"},
+            {"step": 2, "name": "加压", "goal": "制造阻碍和选择。", "estimated_chars": "700"},
+            {"step": 3, "name": "收束", "goal": "完成余波和钩子。", "estimated_chars": "400"},
+        ],
+        "character_states": [
+            {"name": "核心视角人物", "state": "带着压力推进目标。", "speech_style": "短句、少解释、重反应。"},
+            {"name": "阻力方", "state": "制造误判或代价。", "speech_style": "信息克制，不替作者解释。"},
+        ],
+        "ending_hook": "以未完成动作或新压力带向下一章。",
+        "target_word_count": "1200-1800中文汉字",
+    },
+    creative_space={
+        "optional_sensory_details": ["声音", "光线", "距离感"],
+        "optional_dialogue_moves": ["试探", "反问", "短促回应"],
+        "optional_micro_conflicts": ["误判", "时间压力", "信息不完整"],
+        "allowed_scene_expansion": ["动作细节", "场景反应", "人物停顿"],
+    },
+    provenance={
+        "source_card_id": "stage5_closure_manual_probe",
+        "compiler_version": "stage5-closure-plan",
+        "created_at": "2026-07-01T00:00:00Z",
+        "reviewer": "stage5_closure_plan",
+        "reviewed_at": "2026-07-01T00:00:00Z",
+        "review_notes": "Approved only for the minimal Stage 5 formal closure probe; not production training evidence.",
+        "group_id": "stage5_closure_formal_probe",
+        "split": "train",
+    },
+)
+
+write_chapter_execution_cards(cards_path, [card])
+print(f"wrote closure formal card to {cards_path}")
+'@ | python -
+```
+
+Expected: command exits `0` and writes one approved ChapterExecutionCard with source and card hashes computed by repo helpers.
+
+- [ ] **Step 4: Run the formal SFT build command**
+
+```powershell
+python scripts/build_sft_dataset.py --cards data_cards/stage5_closure_chapter_execution_cards_approved.jsonl --chapters data_clean/stage5_closure_formal_corpus.jsonl --style-contract-json data_style/stage5_closure_style_contract_author_main_v1.json --output data_sft/sft_chapter_formal.jsonl --dataset-info-output data_sft/dataset_info_formal.json --dataset-manifest-output data_sft/sft_chapter_formal_manifest.json
+```
+
+Expected: command exits `0` and writes formal dataset rows plus manifest from the closure-specific inputs.
+
+- [ ] **Step 5: Verify required files exist**
+
+```powershell
+Test-Path data_clean/stage5_closure_formal_corpus.jsonl
+Test-Path data_style/stage5_closure_style_contract_author_main_v1.json
+Test-Path data_style/stage5_closure_style_metrics_author_main_v1.json
+Test-Path data_style/stage5_closure_style_contract.md
+Test-Path data_cards/stage5_closure_chapter_execution_cards_approved.jsonl
 Test-Path data_sft/sft_chapter_formal.jsonl
 Test-Path data_sft/dataset_info_formal.json
 Test-Path data_sft/sft_chapter_formal_manifest.json
@@ -126,17 +267,22 @@ Expected:
 True
 True
 True
+True
+True
+True
+True
+True
 ```
 
-- [ ] **Step 3: Inspect manifest boundary fields**
+- [ ] **Step 6: Inspect manifest boundary fields**
 
 ```powershell
-python -c "import json; p='data_sft/sft_chapter_formal_manifest.json'; o=json.load(open(p,encoding='utf-8')); print(o.keys()); print(o.get('style_contract')); print(o.get('split_counts'))"
+python -c "import json; p='data_sft/sft_chapter_formal_manifest.json'; o=json.load(open(p,encoding='utf-8')); print(o.keys()); print(o.get('style_contract')); print(o.get('split_manifest'))"
 ```
 
 Expected: output includes manifest keys, a non-empty style contract section, and split counts.
 
-- [ ] **Step 4: Run focused formal dataset tests**
+- [ ] **Step 7: Run focused formal dataset tests**
 
 ```powershell
 python -m pytest tests/test_sft_builder.py tests/test_dataset_manifest.py -q
@@ -144,10 +290,10 @@ python -m pytest tests/test_sft_builder.py tests/test_dataset_manifest.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```powershell
-git add -f data_sft/sft_chapter_formal.jsonl data_sft/dataset_info_formal.json data_sft/sft_chapter_formal_manifest.json
+git add -f data_clean/stage5_closure_formal_corpus.jsonl data_style/stage5_closure_style_contract_author_main_v1.json data_style/stage5_closure_style_metrics_author_main_v1.json data_style/stage5_closure_style_contract.md data_cards/stage5_closure_chapter_execution_cards_approved.jsonl data_sft/sft_chapter_formal.jsonl data_sft/dataset_info_formal.json data_sft/sft_chapter_formal_manifest.json
 git commit -m "chore: generate stage5c formal dataset manifest"
 ```
 
@@ -321,12 +467,16 @@ This closure does not claim model-quality improvement, efficiency win, preferenc
 - Stage 5A evidence reports:
   - `reports/stage5a_review_model_check_report.json`
   - `reports/stage5a_review_training_env_report.json`
-- Stage 5B style artifacts:
+- Stage 5B full-corpus style artifacts:
   - `data_style/style_contract_author_main_v1.json`
   - `data_style/style_metrics_author_main_v1.json`
   - `style_contract.md`
-- Stage 5C formal data artifacts:
-  - `data_cards/chapter_execution_cards_approved.jsonl`
+- Stage 5C minimal formal closure-probe artifacts:
+  - `data_clean/stage5_closure_formal_corpus.jsonl`
+  - `data_style/stage5_closure_style_contract_author_main_v1.json`
+  - `data_style/stage5_closure_style_metrics_author_main_v1.json`
+  - `data_style/stage5_closure_style_contract.md`
+  - `data_cards/stage5_closure_chapter_execution_cards_approved.jsonl`
   - `data_sft/sft_chapter_formal.jsonl`
   - `data_sft/dataset_info_formal.json`
   - `data_sft/sft_chapter_formal_manifest.json`
@@ -453,7 +603,11 @@ $paths = @(
   'data_style/style_contract_author_main_v1.json',
   'data_style/style_metrics_author_main_v1.json',
   'style_contract.md',
-  'data_cards/chapter_execution_cards_approved.jsonl',
+  'data_clean/stage5_closure_formal_corpus.jsonl',
+  'data_style/stage5_closure_style_contract_author_main_v1.json',
+  'data_style/stage5_closure_style_metrics_author_main_v1.json',
+  'data_style/stage5_closure_style_contract.md',
+  'data_cards/stage5_closure_chapter_execution_cards_approved.jsonl',
   'data_sft/sft_chapter_formal.jsonl',
   'data_sft/dataset_info_formal.json',
   'data_sft/sft_chapter_formal_manifest.json',
