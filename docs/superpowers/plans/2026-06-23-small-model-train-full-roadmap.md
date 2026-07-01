@@ -4,7 +4,7 @@
 
 **Goal:** Map every phase from the uploaded design review into a complete project roadmap and record the current Stage 5 closure state.
 
-**Architecture:** Treat the uploaded review as the source-of-truth strategy and split it into sequential delivery stages. Stage 5A-5E now have implemented engineering, control-plane, and data-integrity closure artifacts. Overall Stage 5 closure is tracked in `reports/stage5_closure_report.md` and still depends on Task 7 final verification evidence; this does not imply model-quality acceptance, production-scale formal training, real preference optimization, or an efficiency win.
+**Architecture:** Treat the uploaded review as the source-of-truth strategy and split it into sequential delivery stages. Stage 5A-5E now have implemented engineering, control-plane, and data-integrity closure artifacts. Overall Stage 5 engineering/control-plane/data-integrity closure is accepted in `reports/stage5_closure_report.md` after the final verification evidence recorded there; this does not imply model-quality acceptance, production-scale formal training, real preference optimization, or an efficiency win.
 
 **Tech Stack:** Python 3.10+, pytest, JSON/JSONL, Markdown docs, Transformers/PEFT worker path, LLaMA-Factory configs, current `small_model_train` package layout.
 
@@ -205,7 +205,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 ### Stage 5E: Controlled Experimentation And Efficiency
 
-**Status:** Control-plane implemented. Overall Stage 5 closure is recorded in `reports/stage5_closure_report.md` and requires Task 7 final verification evidence.
+**Status:** Control-plane implemented. Overall Stage 5 engineering/control-plane/data-integrity closure is accepted in `reports/stage5_closure_report.md` after the final verification evidence recorded there.
 
 **Plan file:** `docs/superpowers/plans/2026-06-28-stage5e-controlled-experimentation-efficiency.md`
 
@@ -256,7 +256,7 @@ These gates apply to every stage after Stage 5A:
 
 ## Current Execution Decision
 
-Stage 5E gate and control-plane artifacts exist. Overall Stage 5 closure is governed by `reports/stage5_closure_report.md` and still depends on Task 7 final verification evidence.
+Stage 5E gate and control-plane artifacts exist. Overall Stage 5 engineering/control-plane/data-integrity closure is accepted in `reports/stage5_closure_report.md` after the final verification evidence recorded there.
 
 This roadmap status does not imply model-quality acceptance, real preference optimization, production-scale formal training, or an efficiency win.
 
