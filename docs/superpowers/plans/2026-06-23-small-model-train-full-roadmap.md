@@ -60,7 +60,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Status:** Implemented as full-corpus StyleContract artifacts; formal SFT closure uses the separate approved Stage 5C closure probe recorded in `reports/stage5_closure_report.md`.
 
-**Future plan file:** `docs/superpowers/plans/2026-06-23-stage5b-style-contract-closure.md`
+**Plan file:** `docs/superpowers/plans/2026-06-23-stage5b-style-contract-closure.md`
 
 **Purpose:** Turn author style from inline prompt text into a versioned, approved, traceable asset shared by training, inference, adapter manifests, and evaluation.
 
@@ -106,7 +106,7 @@ The project should not expand to larger formal training until Stage 5A proves th
 
 **Status:** Implemented as formal data-integrity gates plus a minimal approved closure-probe dataset and manifest recorded in `reports/stage5_closure_report.md`.
 
-**Future plan file:** `docs/superpowers/plans/2026-06-23-stage5c-formal-execution-cards-data-integrity.md`
+**Plan file:** `docs/superpowers/plans/2026-06-23-stage5c-formal-execution-cards-data-integrity.md`
 
 **Purpose:** Replace generic draft chapter cards with concrete, approved `ChapterExecutionCard` records that tell the small model exactly what to execute while preserving freedom in how to write.
 
@@ -264,6 +264,6 @@ This roadmap status does not imply model-quality acceptance, real preference opt
 
 ## Self-Review
 
-- Spec coverage: all uploaded review phases A-E have a repo-native stage, future plan filename, purpose, planned scope, entry criteria, and exit criteria.
+- Spec coverage: all uploaded review phases A-E have a repo-native stage, plan or closure reference, purpose, scope, entry criteria, and exit criteria.
 - Placeholder scan: Stage 5A-5E now have repo-native docs, closure artifacts, and verification gates; any future model-quality, production-scale training, preference-optimization, or efficiency-win work must be planned separately.
 - Type consistency: Stage naming follows `5A` through `5E`; overall Stage 5 closure is recorded in `reports/stage5_closure_report.md`.
