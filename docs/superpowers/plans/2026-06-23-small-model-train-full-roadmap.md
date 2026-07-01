@@ -265,5 +265,5 @@ This roadmap status does not imply model-quality acceptance, real preference opt
 ## Self-Review
 
 - Spec coverage: all uploaded review phases A-E have a repo-native stage, future plan filename, purpose, planned scope, entry criteria, and exit criteria.
-- Placeholder scan: later stages are intentionally forward indexes, not implementation placeholders; each names concrete future files and gates.
+- Placeholder scan: Stage 5A-5E now have repo-native docs, closure artifacts, and verification gates; any future model-quality, production-scale training, preference-optimization, or efficiency-win work must be planned separately.
 - Type consistency: Stage naming follows `5A` through `5E`; overall Stage 5 closure is recorded in `reports/stage5_closure_report.md`.
