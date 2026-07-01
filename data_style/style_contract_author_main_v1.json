@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "style_contract_id": "author_main_v1",
+  "approval_status": "pending_review",
+  "contract_sha256": "812930bd7ca32c42fae922db19a7294f1c89a4201964c0ecabe2730156fa639c",
+  "created_at": "2026-07-01T15:30:58+00:00",
+  "source_corpus": {
+    "path": "data_clean\\chapters_split.jsonl",
+    "sha256": "081a576e4930da7706b62616566ae5f2451ff8c099d5f5ddadad97ed64fa26f6",
+    "quality_filter": "quality_tag=A",
+    "row_count": 1797,
+    "selected_rows": 1797,
+    "split_summary": {
+      "eval": 50,
+      "train": 1747
+    }
+  },
+  "profile_metrics": {
+    "ai_taste": {
+      "hits_per_10k_chars": 0.0,
+      "phrase_hits": {
+        "一种前所未有的感觉": 0,
+        "命运的齿轮开始转动": 0,
+        "嘴角勾起一抹弧度": 0,
+        "心中涌起一股复杂的情绪": 0,
+        "所有人都意识到": 0,
+        "眼神逐渐坚定起来": 0,
+        "空气仿佛凝固了": 0,
+        "这一刻，他终于明白": 0,
+        "难以言喻的情绪": 0
+      },
+      "total_hits": 0
+    },
+    "avg_chinese_chars": 3108.92,
+    "avg_dialogue_ratio": 0.9261,
+    "avg_paragraph_chars": 403.23,
+    "chapter_count": 1797,
+    "chinese_chars": {
+      "avg": 3108.9204,
+      "max": 4998.0,
+      "min": 767.0,
+      "p50": 2923.0,
+      "p90": 3952.4
+    },
+    "dialogue_ratio": {
+      "avg": 0.9261,
+      "max": 1.0,
+      "min": 0.0,
+      "p50": 1.0,
+      "p90": 1.0
+    },
+    "paragraph_chars": {
+      "avg": 403.2284,
+      "max": 4998.0,
+      "min": 0.0,
+      "p50": 50.0,
+      "p90": 2697.0
+    },
+    "punctuation_density": {
+      "“": 0.011546,
+      "”": 0.0115,
+      "…": 0.008426,
+      "、": 0.001222,
+      "。": 0.029288,
+      "！": 0.005097,
+      "，": 0.063399,
+      "：": 0.004049,
+      "；": 4.8e-05,
+      "？": 0.005858
+    },
+    "sentence_chars": {
+      "avg": 25.1388,
+      "max": 289.0,
+      "min": 1.0,
+      "p50": 21.0,
+      "p90": 50.0
+    },
+    "source_filter": {
+      "quality_filter": "quality_tag=A",
+      "selected_rows": 1797,
+      "skipped_rows": 0,
+      "total_rows": 1797
+    }
+  },
+  "prompt_rules": {
+    "system_role": "你是作者的正文执行器，只负责根据章节执行卡写正文。",
+    "style_contract_text": "【角色】\n你是作者的正文执行器，只负责根据章节执行卡写正文。\n\n【叙述原则】\n1. 句子朴素直接，动作承接优先于心理解释。\n2. 情绪通过动作、对白和反应表现，不写总结式升华。\n3. 主角视角跟随，不随意跳到全知视角。\n4. 段落长度参考：平均约 403.2284 个中文汉字。\n\n【对白原则】\n1. 对话比例参考：约 92.6%。\n2. 对话短、准、自然，不用长篇对白解释世界观。\n3. 允许省略、打断和反问。\n\n【禁止风格】\n1. 不写空气仿佛凝固了。\n2. 不写难以言喻的情绪涌上心头。\n3. 不写命运的齿轮开始转动。\n4. 不写嘴角勾起一抹弧度。\n5. 不写眼神逐渐坚定起来。\n6. 当前语料 AI 味短语命中约 0.0 次/万字，生成时应继续压低。\n\n【输出要求】\n只输出正文。不要输出提纲、小标题、解释、分析或提示语。",
+    "output": "只输出正文。不要输出提纲、小标题、解释、分析或提示语。"
+  },
+  "ai_taste_guardrails": {
+    "banned_phrases": [
+      "空气仿佛凝固了",
+      "难以言喻的情绪",
+      "心中涌起一股复杂的情绪",
+      "命运的齿轮开始转动",
+      "眼神逐渐坚定起来",
+      "嘴角勾起一抹弧度",
+      "这一刻，他终于明白",
+      "所有人都意识到",
+      "一种前所未有的感觉"
+    ],
+    "policy": "避免使用语料中标记的 AI 味短语；如原文统计出现命中，生成时应继续压低。"
+  },
+  "author_notes": "",
+  "review": {
+    "reviewer": "",
+    "reviewed_at": "",
+    "review_notes": ""
+  }
+}
